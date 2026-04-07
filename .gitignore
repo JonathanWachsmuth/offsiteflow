@@ -1,0 +1,36 @@
+# Environment & secrets — NEVER commit these
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Data & database files
+data/vendors.db
+data/raw/
+data/processed/
+*.db
+*.sqlite
+
+# Output
+output/
+
+# Notebooks checkpoints
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
