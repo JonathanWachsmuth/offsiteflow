@@ -1,19 +1,24 @@
 # pipeline/collect/contact_extractor.py
 # ─────────────────────────────────────────────────────────────
-# Extracts contact information from vendor websites
-# Tests A2: contact info reachable at scale without manual work
+# Extracts contact emails from vendor websites.
+# Tests A2: contact info reachable at scale without manual work.
 # ─────────────────────────────────────────────────────────────
 
 import re
 import time
-import sqlite3
+import json
+import uuid
+import logging
+from urllib.parse import urljoin
+
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlparse
 
-DB_PATH = "data/vendors.db"
+from config.settings import A2_MIN_EMAIL_RATE
+from db.connection import get_db
 
-# Common contact page paths to check
+logger = logging.getLogger(__name__)
+
 CONTACT_PATHS = [
     "/contact", "/contact-us", "/contacts",
     "/get-in-touch", "/enquire", "/enquiries",
@@ -21,10 +26,9 @@ CONTACT_PATHS = [
 ]
 
 EMAIL_REGEX = re.compile(
-    r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}"
+    r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,4}"
 )
 
-# Emails to exclude — generic/irrelevant
 EXCLUDED_DOMAINS = [
     "sentry.io", "example.com", "google.com",
     "wixpress.com", "squarespace.com"
@@ -40,29 +44,19 @@ HEADERS = {
 # ─────────────────────────────────────────────────────────────
 
 def fetch_page(url: str, timeout: int = 8) -> str | None:
-    """Fetches a page and returns HTML text. Returns None on failure."""
+    """Fetches a page and returns HTML. Returns None on failure."""
     try:
         response = requests.get(url, headers=HEADERS, timeout=timeout)
         if response.status_code == 200:
             return response.text
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Fetch failed for %s: %s", url, exc)
     return None
 
 
-EMAIL_REGEX = re.compile(
-    r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,4}"
-)
-
 def clean_email(raw: str) -> str | None:
-    """
-    Cleans a raw extracted email string.
-    Removes leading digits, trailing garbage, validates format.
-    """
-    # Strip leading numbers (phone prefixes like "4025info@...")
+    """Cleans a raw email string. Returns None if invalid."""
     email = re.sub(r"^\d+", "", raw)
-
-    # Extract just the valid email portion — stops at TLD boundary
     match = re.match(
         r"([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,4})", email
     )
@@ -71,7 +65,6 @@ def clean_email(raw: str) -> str | None:
 
     email = match.group(1).lower().strip()
 
-    # Sanity checks
     if len(email) > 100:       return None
     if email.count("@") != 1:  return None
     if ".." in email:          return None
@@ -81,13 +74,12 @@ def clean_email(raw: str) -> str | None:
 
 def extract_emails_from_html(html: str) -> list:
     """
-    Extracts clean email addresses from raw HTML.
-    Prioritises mailto: links over text parsing.
+    Extracts email addresses from HTML.
+    Prioritises mailto: links over text regex.
     """
-    soup   = BeautifulSoup(html, "html.parser")
-    found  = []
+    soup  = BeautifulSoup(html, "html.parser")
+    found = []
 
-    # Priority 1 — mailto: links (always cleanest)
     for tag in soup.find_all("a", href=True):
         href = tag["href"]
         if href.startswith("mailto:"):
@@ -96,40 +88,35 @@ def extract_emails_from_html(html: str) -> list:
             if email and email not in found:
                 found.append(email)
 
-    # Priority 2 — regex on page text (fallback)
     if not found:
         text = soup.get_text()
         for raw in EMAIL_REGEX.findall(text):
-            email = clean_email(raw)
-            if email and email not in found:
-                domain = email.split("@")[-1]
-                if domain not in EXCLUDED_DOMAINS:
-                    found.append(email)
+            email  = clean_email(raw)
+            domain = email.split("@")[-1] if email else ""
+            if email and domain not in EXCLUDED_DOMAINS and email not in found:
+                found.append(email)
 
     return found
 
 
 def find_contact_email(website: str) -> tuple[str | None, str | None]:
     """
-    Attempts to find a contact email for a vendor website.
+    Finds a contact email for a vendor website.
     Checks homepage first, then common contact page paths.
-    Returns (email, source_url) or (None, None)
+    Returns (email, source_url) or (None, None).
     """
     if not website:
         return None, None
 
-    # Normalise URL
     if not website.startswith("http"):
         website = "https://" + website
 
-    # Try homepage first
     html = fetch_page(website)
     if html:
         emails = extract_emails_from_html(html)
         if emails:
             return emails[0], website
 
-    # Try common contact page paths
     for path in CONTACT_PATHS:
         contact_url = urljoin(website, path)
         html = fetch_page(contact_url)
@@ -143,33 +130,30 @@ def find_contact_email(website: str) -> tuple[str | None, str | None]:
 
 
 # ─────────────────────────────────────────────────────────────
-# DATABASE OPERATIONS
+# DATABASE
 # ─────────────────────────────────────────────────────────────
 
-def get_vendors_without_email(conn: sqlite3.Connection) -> list:
+def get_vendors_without_email(conn) -> list:
     """Returns vendors that have a website but no email yet."""
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT id, name, website 
-        FROM vendors 
+    rows = conn.execute("""
+        SELECT id, name, website
+        FROM vendors
         WHERE (email IS NULL OR email = '')
-        AND (website IS NOT NULL AND website != '')
+        AND   (website IS NOT NULL AND website != '')
         ORDER BY category
-    """)
-    return cursor.fetchall()
+    """).fetchall()
+    return [(r["id"], r["name"], r["website"]) for r in rows]
 
 
-def update_vendor_email(conn: sqlite3.Connection, vendor_id: str,
-                        email: str, source_url: str):
-    """Updates a vendor record with extracted email."""
+def update_vendor_email(conn, vendor_id: str, email: str, source_url: str):
+    """Updates a vendor record with an extracted email."""
     conn.execute("""
-        UPDATE vendors 
-        SET email        = ?,
-            source_url   = ?,
-            updated_at   = CURRENT_TIMESTAMP
+        UPDATE vendors
+        SET email      = ?,
+            source_url = ?,
+            updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
     """, (email, source_url, vendor_id))
-    conn.commit()
 
 
 # ─────────────────────────────────────────────────────────────
@@ -179,87 +163,94 @@ def update_vendor_email(conn: sqlite3.Connection, vendor_id: str,
 def run(limit: int = None) -> dict:
     """
     Scrapes vendor websites to extract contact emails.
-    limit: max vendors to process (None = all)
+    limit: max vendors to process (None = all).
+    Returns result dict with reachable_pct and validated flag.
     """
-    conn    = sqlite3.connect(DB_PATH)
-    vendors = get_vendors_without_email(conn)
+    logger.info("Starting A2 contact extraction")
 
-    if limit:
-        vendors = vendors[:limit]
+    with get_db() as conn:
+        vendors = get_vendors_without_email(conn)
 
-    total       = len(vendors)
-    found       = 0
-    not_found   = 0
-    no_website  = 0
+        if limit:
+            vendors = vendors[:limit]
 
-    print(f"\n{'='*55}")
-    print(f"  A2 Experiment — Contact Reachability")
-    print(f"  Processing {total} vendors without email")
-    print(f"{'='*55}\n")
+        total      = len(vendors)
+        found      = 0
+        not_found  = 0
+        no_website = 0
 
-    for i, (vendor_id, name, website) in enumerate(vendors, 1):
-        print(f"[{i}/{total}] {name[:40]:<40}", end=" ")
+        logger.info("Processing %d vendors without email", total)
 
-        if not website:
-            print("— no website")
-            no_website += 1
-            continue
+        print(f"\n{'='*55}")
+        print(f"  A2 Experiment — Contact Reachability")
+        print(f"  Processing {total} vendors without email")
+        print(f"{'='*55}\n")
 
-        email, source_url = find_contact_email(website)
+        for i, (vendor_id, name, website) in enumerate(vendors, 1):
+            print(f"[{i}/{total}] {name[:40]:<40}", end=" ")
 
-        if email:
-            update_vendor_email(conn, vendor_id, email, source_url)
-            print(f"✓ {email}")
-            found += 1
-        else:
-            print("✗ no email found")
-            not_found += 1
+            if not website:
+                print("— no website")
+                no_website += 1
+                continue
 
-        time.sleep(0.5)  # respectful rate limiting
+            email, source_url = find_contact_email(website)
 
-    # Results
-    reachable_pct = round((found / total) * 100, 1) if total > 0 else 0
-    validated     = reachable_pct >= 60
+            if email:
+                update_vendor_email(conn, vendor_id, email, source_url)
+                logger.debug("Found email for %s: %s", name, email)
+                print(f"✓ {email}")
+                found += 1
+            else:
+                logger.debug("No email found for %s", name)
+                print("✗ no email found")
+                not_found += 1
 
-    results = {
-        "total_processed":  total,
-        "emails_found":     found,
-        "not_found":        not_found,
-        "no_website":       no_website,
-        "reachable_pct":    reachable_pct,
-        "threshold":        60,
-        "validated":        validated
-    }
+            time.sleep(0.5)
 
-    print(f"\n{'='*55}")
-    print(f"  RESULTS SUMMARY")
-    print(f"{'='*55}")
-    print(f"  Processed:      {total}")
-    print(f"  Emails found:   {found} ({reachable_pct}%)")
-    print(f"  Not found:      {not_found}")
-    print(f"  No website:     {no_website}")
-    print(f"  Threshold:      60%")
-    print(f"  OUTCOME:        {'VALIDATED' if validated else 'INVALIDATED'}")
-    print(f"{'='*55}\n")
+        reachable_pct = round((found / total) * 100, 1) if total > 0 else 0
+        validated     = reachable_pct >= (A2_MIN_EMAIL_RATE * 100)
 
-    # Log to experiments table
-    import json, uuid
-    conn.execute("""
-        INSERT INTO experiments (
-            id, assumption_id, hypothesis, method,
-            min_success, result, outcome, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        str(uuid.uuid4()),
-        "A2",
-        "≥60% of scraped vendors have a publicly extractable email address",
-        f"Automated website scraping of {total} vendor homepages and contact pages",
-        "≥60% email extraction rate",
-        json.dumps(results),
-        "validated" if validated else "invalidated",
-        f"Email found for {found}/{total} vendors ({reachable_pct}%)"
-    ))
-    conn.commit()
-    conn.close()
+        results = {
+            "total_processed": total,
+            "emails_found":    found,
+            "not_found":       not_found,
+            "no_website":      no_website,
+            "reachable_pct":   reachable_pct,
+            "threshold":       A2_MIN_EMAIL_RATE * 100,
+            "validated":       validated
+        }
+
+        print(f"\n{'='*55}")
+        print(f"  RESULTS SUMMARY")
+        print(f"{'='*55}")
+        print(f"  Processed:    {total}")
+        print(f"  Emails found: {found} ({reachable_pct}%)")
+        print(f"  Not found:    {not_found}")
+        print(f"  No website:   {no_website}")
+        print(f"  Threshold:    {A2_MIN_EMAIL_RATE*100:.0f}%")
+        print(f"  OUTCOME:      {'VALIDATED' if validated else 'INVALIDATED'}")
+        print(f"{'='*55}\n")
+
+        conn.execute("""
+            INSERT INTO experiments (
+                id, assumption_id, hypothesis, method,
+                min_success, result, outcome, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            str(uuid.uuid4()),
+            "A2",
+            "≥60% of scraped vendors have a publicly extractable email address",
+            f"Automated website scraping of {total} vendor homepages and contact pages",
+            f"≥{A2_MIN_EMAIL_RATE*100:.0f}% email extraction rate",
+            json.dumps(results),
+            "validated" if validated else "invalidated",
+            f"Email found for {found}/{total} vendors ({reachable_pct}%)"
+        ))
 
     return results
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    run(limit=50)
