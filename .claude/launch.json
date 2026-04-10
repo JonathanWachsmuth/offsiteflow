@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "FastAPI Backend",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd /Users/jonathanwachsmuth/Desktop/coding/offsiteflow/.claude/worktrees/vigorous-germain && /Users/jonathanwachsmuth/Desktop/coding/offsiteflow/.venv/bin/python3 -m uvicorn api:app --port 8000"],
+      "port": 8000
+    },
+    {
+      "name": "React Frontend (Vite)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "frontend"],
+      "port": 5174
+    },
+    {
+      "name": "Streamlit App",
+      "runtimeExecutable": "streamlit",
+      "runtimeArgs": ["run", "app.py", "--server.port", "8501"],
+      "port": 8501
+    }
+  ]
+}

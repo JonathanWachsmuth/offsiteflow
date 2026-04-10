@@ -18,7 +18,7 @@ from config.settings import (
     ANTHROPIC_API_KEY, LLM_MODEL, LLM_MAX_TOKENS,
     TOP_N_PER_CATEGORY, MAX_CANDIDATES
 )
-from db.connection import get_db
+from db.supabase_client import sb
 
 logger = logging.getLogger(__name__)
 
@@ -104,47 +104,47 @@ def _validate_brief(brief: dict) -> dict:
 # SQL PRE-FILTER
 # ─────────────────────────────────────────────────────────────
 
-def prefilter(conn, brief: dict, category: str) -> list[dict]:
+def prefilter(brief: dict, category: str) -> list[dict]:
     """
-    Filters vendors by city + category.
+    Filters vendors by city + category using Supabase.
     Optionally filters by capacity.
     Returns up to MAX_CANDIDATES vendor dicts.
     """
-    params = [category, brief["city"]]
-    query  = """
-        SELECT
-            id, name, category, subcategory,
-            description, amenities, tags,
-            capacity_min, capacity_max,
-            price_from, price_unit, currency,
-            email, website, rating_external
-        FROM vendors
-        WHERE category  = ?
-        AND   LOWER(city) = LOWER(?)
-    """
+    fields = (
+        "id,name,category,subcategory,description,amenities,tags,"
+        "capacity_min,capacity_max,price_from,price_unit,currency,"
+        "email,website,rating_external,verified"
+    )
+    city = brief["city"].lower()
+
+    query = (
+        sb.table("vendors")
+        .select(fields)
+        .eq("category", category)
+        .ilike("city", city)
+    )
 
     if brief.get("headcount"):
-        query += " AND (capacity_max IS NULL OR capacity_max >= ?)"
-        params.append(brief["headcount"])
+        # capacity_max IS NULL or >= headcount — Supabase doesn't support OR on same col cleanly
+        # so we fetch without capacity filter and filter in Python
+        pass
 
-    query += """
-        ORDER BY
-            verified DESC,
-            CASE WHEN email IS NOT NULL THEN 1 ELSE 0 END DESC,
-            rating_external DESC NULLS LAST
-        LIMIT ?
-    """
-    params.append(MAX_CANDIDATES)
+    result = query.limit(MAX_CANDIDATES * 3).execute()
+    rows = result.data or []
 
-    rows    = conn.execute(query, params).fetchall()
-    columns = [
-        "id", "name", "category", "subcategory",
-        "description", "amenities", "tags",
-        "capacity_min", "capacity_max",
-        "price_from", "price_unit", "currency",
-        "email", "website", "rating_external"
-    ]
-    return [dict(zip(columns, row)) for row in rows]
+    # Python-side capacity filter and sort
+    headcount = brief.get("headcount")
+    if headcount:
+        rows = [r for r in rows if r.get("capacity_max") is None or r["capacity_max"] >= headcount]
+
+    # Sort: verified first, then has_email, then rating desc
+    rows.sort(key=lambda r: (
+        -int(bool(r.get("verified"))),
+        -int(bool(r.get("email"))),
+        -(r.get("rating_external") or 0),
+    ))
+
+    return rows[:MAX_CANDIDATES]
 
 
 # ─────────────────────────────────────────────────────────────
@@ -280,28 +280,27 @@ def route(brief_input: str | dict) -> dict:
 
     matches = {}
 
-    with get_db() as conn:
-        for category in brief.get("categories", []):
-            logger.info("Routing category: %s", category)
-            print(f"  Matching {category}s...")
+    for category in brief.get("categories", []):
+        logger.info("Routing category: %s", category)
+        print(f"  Matching {category}s...")
 
-            candidates = prefilter(conn, brief, category)
-            logger.debug("SQL prefilter: %d candidates for %s", len(candidates), category)
-            print(f"    SQL filter: {len(candidates)} candidates")
+        candidates = prefilter(brief, category)
+        logger.debug("Supabase prefilter: %d candidates for %s", len(candidates), category)
+        print(f"    Supabase filter: {len(candidates)} candidates")
 
-            if not candidates:
-                logger.warning("No vendors found for %s in %s", category, brief["city"])
-                print(f"    No vendors found for {category} in {brief['city']}")
-                matches[category] = []
-                continue
+        if not candidates:
+            logger.warning("No vendors found for %s in %s", category, brief["city"])
+            print(f"    No vendors found for {category} in {brief['city']}")
+            matches[category] = []
+            continue
 
-            ranked = rank_vendors(brief, candidates, category)
-            matches[category] = ranked
-            print(f"    LLM selected: {len(ranked)} vendors")
+        ranked = rank_vendors(brief, candidates, category)
+        matches[category] = ranked
+        print(f"    LLM selected: {len(ranked)} vendors")
 
-            for v in ranked:
-                print(f"      {v['rank']}. {v['name'][:40]:<40} "
-                      f"score: {v['score']} — {v['reason'][:60]}")
+        for v in ranked:
+            print(f"      {v['rank']}. {v['name'][:40]:<40} "
+                  f"score: {v['score']} — {v['reason'][:60]}")
 
     total = sum(len(v) for v in matches.values())
     logger.info("Routing complete — %d vendors matched", total)

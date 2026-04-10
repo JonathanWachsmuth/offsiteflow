@@ -2,42 +2,145 @@ import { useEffect, useState } from 'react'
 import axios from 'axios'
 import LoadingSpinner from '../components/LoadingSpinner'
 
-function IconPeople() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none"
-      stroke="#6366F1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-      <circle cx="9" cy="7" r="4"/>
-      <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-      <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-    </svg>
-  )
+// ─── Category metadata ────────────────────────────────────────
+
+const CAT_LABEL = {
+  venue:     'Venue',
+  catering:  'Catering',
+  activity:  'Activity',
+  transport: 'Transport',
 }
 
-function IconCalendar() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none"
-      stroke="#6366F1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-      <line x1="16" y1="2" x2="16" y2="6"/>
-      <line x1="8" y1="2" x2="8" y2="6"/>
-      <line x1="3" y1="10" x2="21" y2="10"/>
-    </svg>
-  )
+function catLabel(cat) {
+  return CAT_LABEL[cat] || cat.charAt(0).toUpperCase() + cat.slice(1)
 }
 
-function StatBox({ icon, label, value }) {
+
+// ─── Budget bar ───────────────────────────────────────────────
+
+function BudgetBar({ budget, spent }) {
+  if (!budget || !spent) return null
+  const pct  = Math.min(100, Math.round((spent / budget) * 100))
+  const over = spent > budget
+
   return (
-    <div style={{
-      background: '#F5F7FF', borderRadius: 12, padding: '16px 20px',
-      flex: 1, textAlign: 'center', minWidth: 130,
-    }}>
-      <div style={{ display: 'flex', justifyContent: 'center' }}>{icon}</div>
-      <div style={{ fontSize: 13, color: 'var(--text-mid)', marginTop: 8 }}>{label}</div>
-      <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy)', marginTop: 4 }}>{value}</div>
+    <div>
+      <div style={{
+        display: 'flex', justifyContent: 'space-between',
+        fontSize: 13, marginBottom: 6,
+      }}>
+        <span style={{ color: 'var(--text-mid)' }}>Budget utilisation</span>
+        <span style={{ fontWeight: 700, color: over ? '#DC2626' : 'var(--success)' }}>
+          {pct}%
+        </span>
+      </div>
+      <div style={{ height: 8, borderRadius: 4, background: '#E5E7EB', overflow: 'hidden' }}>
+        <div style={{
+          height: '100%',
+          width: `${pct}%`,
+          borderRadius: 4,
+          background: over
+            ? 'linear-gradient(90deg, #DC2626, #F87171)'
+            : 'linear-gradient(90deg, #6366F1, #1565C0)',
+          transition: 'width 0.6s ease',
+        }} />
+      </div>
+      <div style={{
+        display: 'flex', justifyContent: 'space-between',
+        fontSize: 12, marginTop: 5, color: 'var(--text-light)',
+      }}>
+        <span>£0</span>
+        <span>Budget: £{budget.toLocaleString()}</span>
+      </div>
     </div>
   )
 }
+
+
+// ─── Per-category winner card ─────────────────────────────────
+
+function CategoryWinnerCard({ category, vendor }) {
+  const label   = catLabel(category)
+  const score   = vendor.score ? Math.round(vendor.score * 100) : null
+  const total   = vendor.total_inc_vat
+    ? `£${Math.round(vendor.total_inc_vat).toLocaleString()}`
+    : null
+  const perHead = vendor.total_per_head
+    ? `£${Math.round(vendor.total_per_head)}/head`
+    : null
+
+  return (
+    <div style={{
+      background: 'white',
+      borderRadius: 16,
+      border: '1px solid var(--border)',
+      borderTop: '3px solid transparent',
+      backgroundImage: 'linear-gradient(white, white), linear-gradient(90deg, #1565C0, #6366F1)',
+      backgroundOrigin: 'border-box',
+      backgroundClip: 'padding-box, border-box',
+      padding: '20px 22px',
+      boxShadow: '0 2px 8px rgba(13,27,62,0.05)',
+    }}>
+      {/* Category label + score */}
+      <div style={{
+        display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between', marginBottom: 12,
+      }}>
+        <span style={{
+          fontSize: 11, fontWeight: 700, letterSpacing: '1.2px',
+          textTransform: 'uppercase', color: 'var(--text-light)',
+        }}>
+          {label}
+        </span>
+        {score !== null && (
+          <span className="pill-gradient" style={{ fontSize: 11 }}>
+            {score}%
+          </span>
+        )}
+      </div>
+
+      {/* Vendor name */}
+      <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--navy)', marginBottom: 8 }}>
+        {vendor.vendor_name}
+      </div>
+
+      {/* Price — only shown when available */}
+      {total && (
+        <div style={{ marginBottom: 10 }}>
+          <span style={{ fontSize: 22, fontWeight: 800, color: 'var(--navy)' }}>
+            {total}
+          </span>
+          {perHead && (
+            <span style={{ fontSize: 12, color: 'var(--text-light)', marginLeft: 6 }}>
+              {perHead}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Inclusions */}
+      {vendor.inclusions?.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+          {vendor.inclusions.slice(0, 4).map(inc => (
+            <span key={inc} style={{
+              background: '#F5F7FF',
+              borderRadius: 6,
+              padding: '2px 8px',
+              fontSize: 11,
+              color: 'var(--text-mid)',
+              border: '1px solid var(--border)',
+            }}>
+              {inc}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+
+// ─── Main component ───────────────────────────────────────────
 
 export default function Step4Shortlist({ brief, selectedVendorIds, onBack, onRestart }) {
   const [shortlist, setShortlist] = useState(null)
@@ -61,7 +164,9 @@ export default function Step4Shortlist({ brief, selectedVendorIds, onBack, onRes
     load()
   }, [])
 
-  if (loading) return <LoadingSpinner text="Analysing vendor responses..." />
+  if (loading) {
+    return <LoadingSpinner text="Analysing vendor quotes and building shortlist…" />
+  }
 
   if (error) {
     return (
@@ -80,10 +185,12 @@ export default function Step4Shortlist({ brief, selectedVendorIds, onBack, onRes
     )
   }
 
-  const top     = shortlist?.shortlist?.[0]
-  const summary = shortlist?.budget_summary || {}
+  const byCategory = shortlist?.by_category || {}
+  const summary    = shortlist?.budget_summary || {}
+  const metaInfo   = shortlist?.meta || {}
+  const categories = Object.keys(byCategory)
 
-  if (!top) {
+  if (categories.length === 0) {
     return (
       <div className="page-container narrow" style={{ textAlign: 'center' }}>
         <p style={{ color: 'var(--text-mid)' }}>No shortlist results available.</p>
@@ -94,175 +201,112 @@ export default function Step4Shortlist({ brief, selectedVendorIds, onBack, onRes
     )
   }
 
-  const matchScore = top.score ? Math.round(top.score * 100) : '—'
-  const totalVAT   = top.total_inc_vat
-    ? `£${Math.round(top.total_inc_vat).toLocaleString()}`
-    : '—'
-  const perHead    = top.total_per_head
-    ? `£${Math.round(top.total_per_head).toLocaleString()}`
-    : '—'
-
-  const inclusions = top.inclusions?.length > 0
-    ? top.inclusions
-    : Object.entries(top.components || {})
-        .filter(([, v]) => v === 'included')
-        .map(([k]) => k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()))
-
   return (
     <div className="page-container narrow">
-      {/* Badge */}
-      <div style={{ textAlign: 'center', marginBottom: 24 }}>
+      {/* Header */}
+      <div style={{ textAlign: 'center', marginBottom: 32 }}>
         <div style={{
           display: 'inline-block',
           background: 'rgba(234,179,8,0.1)',
           border: '1px solid rgba(234,179,8,0.3)',
           borderRadius: 20, padding: '6px 16px',
           fontSize: 13, fontWeight: 500, color: 'var(--warning)',
-          marginBottom: 20,
+          marginBottom: 16,
         }}>
-          Best Match Found
+          Shortlist Ready
         </div>
-        <h2 style={{ fontSize: 36, fontWeight: 800, color: 'var(--navy)', lineHeight: 1.15 }}>
-          Your ideal event package
+        <h2 style={{ fontSize: 34, fontWeight: 800, color: 'var(--navy)', lineHeight: 1.2 }}>
+          Your event package
         </h2>
-        <p style={{ fontSize: 16, color: 'var(--text-mid)', marginTop: 10 }}>
-          Based on your requirements and vendor responses,
-          here's our top recommendation.
-        </p>
+        {metaInfo.vendors_evaluated && (
+          <p style={{ fontSize: 13, color: 'var(--text-light)', marginTop: 8 }}>
+            Agent evaluated {metaInfo.vendors_evaluated} vendor{metaInfo.vendors_evaluated !== 1 ? 's' : ''} across{' '}
+            {categories.length} categor{categories.length !== 1 ? 'ies' : 'y'}
+          </p>
+        )}
       </div>
 
-      {/* Main card */}
+      {/* Per-category winner cards */}
       <div style={{
-        background: 'white', borderRadius: 20, padding: 32,
-        boxShadow: '0 4px 32px rgba(13,27,62,0.10)',
+        display: 'grid',
+        gridTemplateColumns: categories.length >= 2 ? '1fr 1fr' : '1fr',
+        gap: 16,
+        marginBottom: 24,
       }}>
-        {/* Top row */}
+        {categories.map(cat => {
+          const top = byCategory[cat]?.[0]
+          if (!top) return null
+          return <CategoryWinnerCard key={cat} category={cat} vendor={top} />
+        })}
+      </div>
+
+      {/* Budget summary card */}
+      <div className="card" style={{ marginBottom: 16, padding: 24 }}>
+        <BudgetBar budget={summary.budget} spent={summary.total_inc_vat} />
+
         <div style={{
-          display: 'flex', justifyContent: 'space-between',
-          alignItems: 'flex-start', flexWrap: 'wrap', gap: 16,
+          display: 'flex', justifyContent: 'space-around',
+          marginTop: 20, paddingTop: 16,
+          borderTop: '1px solid var(--border)',
+          flexWrap: 'wrap', gap: 8,
+          textAlign: 'center',
         }}>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 24, fontWeight: 800, color: 'var(--navy)' }}>
-                {top.vendor_name}
-              </span>
-              <span className="pill-gradient">{matchScore}% match</span>
-            </div>
-            <div style={{ fontSize: 14, color: 'var(--text-mid)', marginTop: 6 }}>
-              {brief?.city || ''}
-              {top.category && ` · ${top.category.charAt(0).toUpperCase() + top.category.slice(1)}`}
+            <div style={{ fontSize: 12, color: 'var(--text-light)', marginBottom: 2 }}>Budget</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--navy)' }}>
+              £{(summary.budget || 0).toLocaleString()}
             </div>
           </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 36, fontWeight: 800, color: 'var(--navy)', lineHeight: 1.1 }}>
-              {totalVAT}
+          <div>
+            <div style={{ fontSize: 12, color: 'var(--text-light)', marginBottom: 2 }}>Est. total (inc. VAT)</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--navy)' }}>
+              £{Math.round(summary.total_inc_vat || 0).toLocaleString()}
             </div>
-            <div style={{ fontSize: 13, color: 'var(--text-light)' }}>total estimate</div>
           </div>
-        </div>
-
-        {/* Stat boxes */}
-        <div style={{ display: 'flex', gap: 12, marginTop: 20, flexWrap: 'wrap' }}>
-          <StatBox
-            icon={<IconPeople />}
-            label="Capacity"
-            value={`${brief?.headcount || '—'} guests`}
-          />
-          <StatBox
-            icon={<IconCalendar />}
-            label="Date"
-            value={brief?.date_start || '—'}
-          />
-          <StatBox
-            icon={<span style={{ fontSize: 20, fontWeight: 700, color: '#6366F1' }}>£</span>}
-            label="Per person"
-            value={perHead}
-          />
-        </div>
-
-        {/* What's included */}
-        <div style={{ marginTop: 24 }}>
-          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--navy)', marginBottom: 12 }}>
-            * What's included
-          </div>
-          {inclusions.length > 0 ? (
+          <div>
+            <div style={{ fontSize: 12, color: 'var(--text-light)', marginBottom: 2 }}>
+              {summary.within_budget ? 'Remaining' : 'Over budget'}
+            </div>
             <div style={{
-              display: 'grid', gridTemplateColumns: '1fr 1fr',
-              gap: '8px 16px',
-            }}>
-              {inclusions.map(item => (
-                <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <div style={{
-                    width: 18, height: 18, borderRadius: '50%', flexShrink: 0,
-                    background: 'var(--gradient)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    color: 'white', fontSize: 10, fontWeight: 700,
-                  }}>
-                    &#10003;
-                  </div>
-                  <span style={{ fontSize: 14, color: '#374151' }}>{item}</span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p style={{ fontSize: 14, color: 'var(--text-light)' }}>
-              Details pending vendor confirmation.
-            </p>
-          )}
-        </div>
-
-        {/* Recommendation */}
-        {shortlist?.recommendation && (
-          <div style={{
-            marginTop: 20, padding: '14px 18px',
-            background: '#F5F7FF', borderRadius: 10,
-            fontSize: 14, color: '#374151', lineHeight: 1.6,
-          }}>
-            {shortlist.recommendation}
-          </div>
-        )}
-
-        {/* Budget summary */}
-        <div style={{
-          marginTop: 20, padding: '14px 18px',
-          background: summary.within_budget ? '#F0FDF4' : '#FEF2F2',
-          borderRadius: 10, fontSize: 14,
-          border: `1px solid ${summary.within_budget ? '#BBF7D0' : '#FECACA'}`,
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-            <span style={{ color: 'var(--text-mid)' }}>
-              Budget: £{(summary.budget || 0).toLocaleString()}
-            </span>
-            <span style={{ color: 'var(--text-mid)' }}>
-              Total: £{Math.round(summary.total_inc_vat || 0).toLocaleString()}
-            </span>
-            <span style={{
-              fontWeight: 600,
+              fontSize: 20, fontWeight: 700,
               color: summary.within_budget ? 'var(--success)' : '#DC2626',
             }}>
-              {summary.within_budget
-                ? `£${Math.round(summary.remaining || 0).toLocaleString()} remaining`
-                : `£${Math.round(Math.abs(summary.remaining || 0)).toLocaleString()} over budget`
-              }
-            </span>
+              £{Math.round(Math.abs(summary.remaining || 0)).toLocaleString()}
+            </div>
           </div>
         </div>
+      </div>
 
-        {/* Buttons */}
-        <div style={{ display: 'flex', gap: 12, marginTop: 28 }}>
-          <button
-            className="btn-primary"
-            style={{ flex: 1, padding: '14px 20px' }}
-            onClick={() => alert(
-              'Booking flow coming soon \u2014 your event coordinator will be in touch within 24 hours.'
-            )}
-          >
-            Confirm &amp; Book Event
-          </button>
-          <button className="btn-ghost" onClick={onRestart} style={{ padding: '14px 24px' }}>
-            Start Over
-          </button>
+      {/* AI Recommendation */}
+      {shortlist?.recommendation && (
+        <div className="card" style={{ marginBottom: 24, padding: 24 }}>
+          <div style={{
+            fontSize: 11, fontWeight: 700, letterSpacing: '1px',
+            textTransform: 'uppercase', color: 'var(--text-light)',
+            marginBottom: 10,
+          }}>
+            AI Recommendation
+          </div>
+          <p style={{ fontSize: 15, color: '#374151', lineHeight: 1.75, margin: 0 }}>
+            {shortlist.recommendation}
+          </p>
         </div>
+      )}
+
+      {/* Actions */}
+      <div style={{ display: 'flex', gap: 12 }}>
+        <button
+          className="btn-primary"
+          style={{ flex: 1, padding: '14px 20px' }}
+          onClick={() => alert(
+            'Booking flow coming soon — your event coordinator will be in touch within 24 hours.'
+          )}
+        >
+          Confirm &amp; Book Event
+        </button>
+        <button className="btn-ghost" onClick={onRestart} style={{ padding: '14px 24px' }}>
+          Start Over
+        </button>
       </div>
     </div>
   )
