@@ -2,6 +2,12 @@ import { useState } from 'react'
 import axios from 'axios'
 import LoadingSpinner from '../components/LoadingSpinner'
 
+const DEMO_BRIEF =
+  "We're planning a 2-day company offsite for 45 people in London. " +
+  "We need a venue with meeting rooms and outdoor space, catering with " +
+  "vegetarian and vegan options, a team-building activity (something creative, " +
+  "not sports), and coach transport from central London. Budget is £25,000."
+
 function parsePills(text) {
   const pills = []
   const headcount = text.match(/(\d+)\s*(?:people|persons?|guests?|delegates?|attendees?)/i)
@@ -54,16 +60,28 @@ export default function Step1Brief({ onComplete }) {
 
   return (
     <div className="page-container narrow" style={{ textAlign: 'center' }}>
-      {/* Badge */}
-      <div style={{
-        display: 'inline-block',
-        background: 'rgba(99,102,241,0.1)',
-        border: '1px solid rgba(99,102,241,0.2)',
-        borderRadius: 20, padding: '6px 16px',
-        fontSize: 13, fontWeight: 500, color: 'var(--purple)',
-        marginBottom: 20,
-      }}>
-        * AI-Powered Event Planning
+      {/* Badge + demo button row */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+        <div style={{
+          background: 'rgba(99,102,241,0.1)',
+          border: '1px solid rgba(99,102,241,0.2)',
+          borderRadius: 20, padding: '6px 16px',
+          fontSize: 13, fontWeight: 500, color: 'var(--purple)',
+        }}>
+          * AI-Powered Event Planning
+        </div>
+        <button
+          onClick={() => setBriefText(DEMO_BRIEF)}
+          style={{
+            background: 'transparent',
+            border: '1px dashed var(--border)',
+            borderRadius: 20, padding: '6px 14px',
+            fontSize: 13, fontWeight: 500, color: 'var(--text-mid)',
+            cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+          }}
+        >
+          Try a demo brief
+        </button>
       </div>
 
       {/* Headline */}

@@ -20,10 +20,14 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 SMTP_HOST     = "smtp.gmail.com"
 SMTP_PORT     = 587
 
-# ── Database ──────────────────────────────────────────────────
+# ── Database (SQLite — local fallback / migration source) ─────
 DB_PATH = os.path.join(
     os.path.dirname(__file__), "..", "data", "vendors.db"
 )
+
+# ── Supabase ──────────────────────────────────────────────────
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://kyrodpcviaximcbuzykf.supabase.co")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 # ── File paths ────────────────────────────────────────────────
 RAW_SCRAPED_DIR = os.path.join(

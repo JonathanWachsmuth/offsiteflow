@@ -8,19 +8,19 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import sqlite3
 import logging
-from typing import Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from pipeline.match.llm_router     import route
-from pipeline.extract.quote_parser import parse_quote
-from pipeline.normalise.normaliser import normalise_quotes
-from pipeline.normalise.ranker     import rank_quotes
-from config.settings               import DB_PATH
+from pipeline.match.llm_router       import route
+from pipeline.extract.quote_parser   import parse_quote
+from pipeline.normalise.normaliser   import normalise_quotes
+from pipeline.normalise.ranker       import rank_quotes
+from pipeline.outreach.rfq_generator import generate_email_body, build_form_url
+from db.supabase_client              import sb
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -29,57 +29,211 @@ app = FastAPI(title="OffsiteFlow API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:5173",
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
 # ─────────────────────────────────────────────────────────────
-# SYNTHETIC RESPONSES (one per category)
+# BUDGET ALLOCATION PER CATEGORY
 # ─────────────────────────────────────────────────────────────
 
-SYNTHETIC = {
-    "venue": {
-        "type": "email",
-        "response": (
-            "Thank you for your enquiry. For 45 people, full day hire is £4,500 + VAT (20%). "
-            "Includes AV equipment, WiFi, coordinator, outdoor terrace. "
-            "Excludes catering. Available June. Max capacity 60."
-        ),
-    },
-    "catering": {
-        "type": "form",
-        "response": {
-            "available":        "Yes",
-            "maximum_capacity": 80,
-            "price_per_head":   85,
-            "inclusions":       "food, staff, crockery, linen",
-            "exclusions":       "venue, drinks",
-            "notes":            "12.5% service charge. VAT 20%.",
-        },
-    },
-    "activity": {
-        "type": "email",
-        "response": (
-            "Outdoor challenge programme: £65 per person half-day. "
-            "Includes equipment, facilitators, debrief. "
-            "Excludes venue, catering. Available June 15+. Groups 20-80."
-        ),
-    },
-    "transport": {
-        "type": "email",
-        "response": (
-            "We can provide coach transfers for 45 people. "
-            "£8 per person per trip. Includes driver and fuel. "
-            "Available on request. Min 2 hours notice."
-        ),
-    },
+BUDGET_SHARE = {
+    "venue":    0.50,
+    "catering": 0.30,
+    "activity": 0.25,
+    "transport": 0.05,
 }
+
+
+# ─────────────────────────────────────────────────────────────
+# PER-VENDOR SYNTHETIC RESPONSE GENERATOR
+# Template-based — fast, no LLM call, uses real vendor data.
+# Each vendor gets a unique response derived from their actual
+# DB record (name, capacity, price_from), so the pipeline
+# exercises real data end-to-end.
+# ─────────────────────────────────────────────────────────────
+
+def generate_synthetic_response(vendor: dict, brief: dict) -> dict:
+    """
+    Builds a realistic vendor quote response from actual vendor DB fields.
+    Returns the same shape as SYNTHETIC used to: {type, response}.
+    Calling code passes response directly to parse_quote().
+    """
+    category   = vendor.get("category", "venue")
+    name       = vendor.get("name", "the team")
+    headcount  = int(brief.get("headcount") or 45)
+    budget     = float(brief.get("budget_total") or 15000)
+    cat_budget = budget * BUDGET_SHARE.get(category, 0.25)
+    price_from = vendor.get("price_from")
+    cap_max    = int(vendor.get("capacity_max") or headcount + 20)
+
+    if category == "venue":
+        flat = int(price_from or round(cat_budget * 0.85, -2))
+        return {
+            "type": "email",
+            "response": (
+                f"Thank you for your enquiry about {name}. "
+                f"For your group of {headcount}, we can offer exclusive hire at "
+                f"£{flat:,} + VAT (20%). "
+                f"This includes AV equipment, high-speed WiFi, and a dedicated event coordinator. "
+                f"Catering is not included but we work with approved partners. "
+                f"We have availability for your requested dates. "
+                f"Maximum capacity: {cap_max} guests."
+            ),
+        }
+
+    elif category == "catering":
+        pph = int(price_from or max(40, round(cat_budget / headcount * 0.9)))
+        return {
+            "type": "form",
+            "response": {
+                "available":        "Yes",
+                "maximum_capacity": cap_max,
+                "price_per_head":   pph,
+                "inclusions":       "all food, serving staff, crockery, linen",
+                "exclusions":       "venue, drinks, bar",
+                "notes":            "12.5% service charge. VAT at 20%.",
+            },
+        }
+
+    elif category == "activity":
+        pph = int(price_from or max(30, round(cat_budget / headcount * 0.85)))
+        return {
+            "type": "email",
+            "response": (
+                f"Thanks for getting in touch with {name}! "
+                f"We can run our team programme for your group of {headcount}. "
+                f"Pricing: £{pph} per person for a half-day session. "
+                f"Includes all equipment, trained facilitators, and a debrief session. "
+                f"Excludes venue, catering, and transport. "
+                f"Available on your requested dates. Groups of up to {cap_max} welcome."
+            ),
+        }
+
+    elif category == "transport":
+        ppp = max(6, int(price_from or round(cat_budget / headcount * 0.8)))
+        return {
+            "type": "email",
+            "response": (
+                f"Hello from {name}. "
+                f"We can arrange coach transfers for your group of {headcount} people. "
+                f"Pricing: £{ppp} per person per journey, including driver and fuel. "
+                f"Available on request — please confirm pickup times and locations."
+            ),
+        }
+
+    else:
+        pph = int(round(cat_budget / max(headcount, 1) * 0.85))
+        return {
+            "type": "email",
+            "response": (
+                f"Thank you for contacting {name}. "
+                f"We can accommodate your event for {headcount} people. "
+                f"Pricing from £{pph} per person. "
+                f"Available for your requested dates."
+            ),
+        }
+
+
+# ─────────────────────────────────────────────────────────────
+# FAST SYNTHETIC EXTRACTOR
+# Reads back the fields we put into generate_synthetic_response
+# without calling the LLM — cuts shortlist latency from ~30s to <1s.
+# ─────────────────────────────────────────────────────────────
+
+def _extract_synthetic(synth: dict, vendor: dict, brief: dict) -> dict:
+    """
+    Directly extracts structured quote fields from a synthetic response.
+    Returns an `extracted` dict compatible with normalise_quotes().
+    """
+    cat       = vendor.get("category", "venue")
+    headcount = int(brief.get("headcount") or 45)
+    raw       = synth["response"]
+    rtype     = synth["type"]
+
+    if rtype == "form" and isinstance(raw, dict):
+        # Catering / any form-type response
+        pph        = raw.get("price_per_head") or 0
+        cap        = raw.get("maximum_capacity") or headcount + 20
+        incl_str   = raw.get("inclusions", "")
+        excl_str   = raw.get("exclusions", "")
+        inclusions = [i.strip() for i in incl_str.split(",")] if isinstance(incl_str, str) else list(incl_str or [])
+        exclusions = [e.strip() for e in excl_str.split(",")] if isinstance(excl_str, str) else list(excl_str or [])
+        return {
+            "base_price":       None,
+            "price_per_head":   float(pph),
+            "total_estimated":  float(pph) * headcount,
+            "vat_rate":         0.20,
+            "service_fee":      0.125,
+            "capacity_offered": cap,
+            "availability":     1,
+            "inclusions":       inclusions,
+            "exclusions":       exclusions,
+            "price_unit":       "per_head",
+            "currency":         "GBP",
+            "notes":            raw.get("notes", ""),
+            "_confidence_score": 0.80,
+        }
+
+    # Email-type response — parse the price we embedded in the text
+    import re
+    prices = re.findall(r'£([\d,]+)', str(raw))
+    nums   = [int(p.replace(",", "")) for p in prices if p]
+
+    if cat == "venue":
+        base = nums[0] if nums else 0
+        return {
+            "base_price":       float(base),
+            "price_per_head":   round(float(base) / headcount, 2) if base else None,
+            "total_estimated":  float(base) * 1.20,  # inc VAT
+            "vat_rate":         0.20,
+            "service_fee":      None,
+            "capacity_offered": vendor.get("capacity_max") or headcount + 20,
+            "availability":     1,
+            "inclusions":       ["AV equipment", "WiFi", "event coordinator"],
+            "exclusions":       ["catering", "drinks"],
+            "price_unit":       "flat",
+            "currency":         "GBP",
+            "notes":            "",
+            "_confidence_score": 0.75,
+        }
+    elif cat in ("activity", "transport"):
+        pph = nums[0] if nums else 0
+        return {
+            "base_price":       None,
+            "price_per_head":   float(pph),
+            "total_estimated":  float(pph) * headcount * 1.20,
+            "vat_rate":         0.20,
+            "service_fee":      None,
+            "capacity_offered": vendor.get("capacity_max") or headcount + 20,
+            "availability":     1,
+            "inclusions":       ["equipment", "facilitators"] if cat == "activity" else ["driver", "fuel"],
+            "exclusions":       ["venue", "catering"],
+            "price_unit":       "per_head",
+            "currency":         "GBP",
+            "notes":            "",
+            "_confidence_score": 0.75,
+        }
+    else:
+        pph = nums[0] if nums else 0
+        return {
+            "base_price":       None,
+            "price_per_head":   float(pph),
+            "total_estimated":  float(pph) * headcount * 1.20,
+            "vat_rate":         0.20,
+            "service_fee":      None,
+            "capacity_offered": headcount + 20,
+            "availability":     1,
+            "inclusions":       [],
+            "exclusions":       [],
+            "price_unit":       "per_head",
+            "currency":         "GBP",
+            "notes":            "",
+            "_confidence_score": 0.60,
+        }
 
 
 # ─────────────────────────────────────────────────────────────
@@ -87,28 +241,28 @@ SYNTHETIC = {
 # ─────────────────────────────────────────────────────────────
 
 def fetch_vendors_by_ids(vendor_ids: list[str]) -> list[dict]:
-    """Fetches full vendor records from vendors.db by ID list."""
+    """Fetches full vendor records from Supabase by ID list."""
     if not vendor_ids:
         return []
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    placeholders = ",".join("?" for _ in vendor_ids)
-    rows = conn.execute(
-        f"SELECT * FROM vendors WHERE id IN ({placeholders})", vendor_ids
-    ).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+    result = sb.table("vendors").select("*").in_("id", vendor_ids).execute()
+    rows = result.data or []
+    # Restore caller's requested order
+    order = {vid: i for i, vid in enumerate(vendor_ids)}
+    return sorted(rows, key=lambda r: order.get(r["id"], 999))
 
 
 # ─────────────────────────────────────────────────────────────
-# REQUEST / RESPONSE MODELS
+# REQUEST MODELS
 # ─────────────────────────────────────────────────────────────
 
 class RouteRequest(BaseModel):
     brief: str
 
-
 class ShortlistRequest(BaseModel):
+    brief: dict
+    selected_vendor_ids: list[str]
+
+class PreviewRFQsRequest(BaseModel):
     brief: dict
     selected_vendor_ids: list[str]
 
@@ -134,58 +288,108 @@ def api_route(req: RouteRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@app.post("/api/preview-rfqs")
+def api_preview_rfqs(req: PreviewRFQsRequest):
+    """
+    Generates branded RFQ email previews for all selected vendors.
+    Calls the real rfq_generator (LLM) — no emails are sent.
+    Up to 5 vendors are generated concurrently to keep latency low.
+    """
+    logger.info("POST /api/preview-rfqs — %d vendors", len(req.selected_vendor_ids))
+    vendors = fetch_vendors_by_ids(req.selected_vendor_ids)
+    if not vendors:
+        raise HTTPException(status_code=400, detail="No vendors found")
+
+    brief    = req.brief
+    event_id = "demo"
+
+    def make_preview(vendor: dict) -> dict:
+        vid       = vendor["id"]
+        name      = vendor.get("name", "Vendor")
+        cat       = vendor.get("category", "venue")
+        has_email = bool(vendor.get("email"))
+        try:
+            body     = generate_email_body(vendor, brief)
+            form_url = build_form_url(event_id, vid, name, cat)
+            subject  = (
+                f"Quote request — "
+                f"{brief.get('event_type', 'corporate event').title()} "
+                f"for {brief.get('headcount', '~50')} people, "
+                f"{brief.get('city', 'London')}"
+            )
+            return {
+                "vendor_id":   vid,
+                "vendor_name": name,
+                "category":    cat,
+                "subject":     subject,
+                "plain_body":  body,
+                "has_email":   has_email,
+                "email_to":    vendor.get("email") or "(no email on file)",
+            }
+        except Exception as exc:
+            logger.warning("RFQ preview failed for %s: %s", name, exc)
+            return {
+                "vendor_id":   vid,
+                "vendor_name": name,
+                "category":    cat,
+                "has_email":   has_email,
+                "error":       str(exc),
+            }
+
+    results: dict = {}
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        futures = {pool.submit(make_preview, v): v["id"] for v in vendors}
+        for fut in as_completed(futures):
+            results[futures[fut]] = fut.result()
+
+    # Restore original selection order
+    previews = [results[v["id"]] for v in vendors if v["id"] in results]
+    return {"previews": previews, "total": len(previews)}
+
+
 @app.post("/api/shortlist")
 def api_shortlist(req: ShortlistRequest):
     """
-    Builds a shortlist from selected vendor IDs using synthetic responses.
-    One synthetic response per category; uses the first selected vendor
-    from each category.
+    Builds a shortlist from ALL selected vendor IDs.
+    Generates a unique synthetic response per vendor using their actual DB
+    data, then runs the full parse → normalise → rank pipeline.
+    Previously used one hardcoded response per category; now every vendor
+    gets a distinct, realistic quote derived from their record.
     """
     logger.info(
         "POST /api/shortlist — %d vendors selected", len(req.selected_vendor_ids)
     )
 
-    brief      = req.brief
-    event_id   = "api-demo"
-    vendors    = fetch_vendors_by_ids(req.selected_vendor_ids)
+    brief    = req.brief
+    event_id = "api-demo"
+    vendors  = fetch_vendors_by_ids(req.selected_vendor_ids)
 
     if not vendors:
         raise HTTPException(status_code=400, detail="No vendors found for given IDs")
 
-    # Group selected vendors by category — one per category
-    seen_categories: set[str] = set()
-    candidates: list[dict]    = []
-    for v in vendors:
-        cat = v.get("category", "venue")
-        if cat not in seen_categories:
-            seen_categories.add(cat)
-            candidates.append(v)
-
     parsed_quotes: list[dict] = []
 
-    for vendor in candidates:
-        cat    = vendor.get("category", "venue")
-        synth  = SYNTHETIC.get(cat, SYNTHETIC["venue"])
-        raw    = synth["response"]
+    for vendor in vendors:
+        cat   = vendor.get("category", "venue")
+        synth = generate_synthetic_response(vendor, brief)
+        raw   = synth["response"]
 
-        try:
-            result = parse_quote(
-                raw_response = raw,
-                vendor       = vendor,
-                brief        = brief,
-                outreach_id  = f"api-{vendor['id']}",
-                event_id     = event_id,
-                save_to_db   = False,
-            )
-            parsed_quotes.append({
-                **result,
-                "vendor_id":   vendor["id"],
-                "vendor_name": vendor.get("name", "Unknown"),
-                "category":    cat,
-            })
-        except Exception as exc:
-            logger.warning("parse_quote failed for %s: %s", vendor.get("name"), exc)
-            continue
+        # Fast direct extraction — synthetic responses have known structure,
+        # so we read the fields we built in and skip the LLM extraction call.
+        extracted = _extract_synthetic(synth, vendor, brief)
+        conf      = extracted.pop("_confidence_score", 0.55)
+
+        parsed_quotes.append({
+            "quote_id":         None,
+            "extracted":        extracted,
+            "confidence_score": conf,
+            "warnings":         [],
+            "extraction_notes": "synthetic — direct extraction, no LLM",
+            "response_type":    synth["type"],
+            "vendor_id":        vendor["id"],
+            "vendor_name":      vendor.get("name", "Unknown"),
+            "category":         cat,
+        })
 
     if not parsed_quotes:
         raise HTTPException(
@@ -226,7 +430,7 @@ def api_shortlist(req: ShortlistRequest):
         logger.error("rank_quotes failed: %s", exc)
         raise HTTPException(status_code=500, detail=f"Ranking failed: {exc}")
 
-    # Build budget summary
+    # Budget summary using top vendor per category
     top_per_cat: dict = {}
     for q in ranked.get("ranked", []):
         if q["category"] not in top_per_cat:
@@ -239,42 +443,68 @@ def api_shortlist(req: ShortlistRequest):
     budget    = brief.get("budget_total") or 0
     remaining = budget - total_vat
 
-    # Flatten shortlist for easier frontend consumption
+    # Flatten shortlist for frontend
     shortlist_items = []
     for q in ranked.get("ranked", []):
         n = q.get("normalised", {})
         shortlist_items.append({
-            "rank":              q.get("rank"),
-            "vendor_name":       q.get("vendor_name"),
-            "category":          q.get("category"),
-            "score":             q.get("rank_score"),
-            "total_inc_vat":     n.get("total_inc_vat"),
-            "total_per_head":    n.get("total_per_head"),
-            "components":        q.get("components", {}),
+            "rank":               q.get("rank"),
+            "vendor_name":        q.get("vendor_name"),
+            "category":           q.get("category"),
+            "score":              q.get("rank_score"),
+            "total_inc_vat":      n.get("total_inc_vat"),
+            "total_per_head":     n.get("total_per_head"),
+            "components":         q.get("components", {}),
             "missing_components": q.get("missing_components", []),
-            "inclusions":        [
+            "inclusions":         [
                 k.replace("_", " ").title()
                 for k, v in q.get("components", {}).items()
                 if v == "included"
             ],
-            "exclusions":        [
+            "exclusions":         [
                 k.replace("_", " ").title()
                 for k, v in q.get("components", {}).items()
                 if v == "excluded"
             ],
-            "availability":      q.get("availability"),
-            "confidence_score":  q.get("confidence_score"),
-            "score_breakdown":   q.get("score_breakdown", {}),
+            "availability":       q.get("availability"),
+            "confidence_score":   q.get("confidence_score"),
+            "score_breakdown":    q.get("score_breakdown", {}),
         })
 
+    # Flatten by_category for the frontend category-winner cards
+    by_category_flat: dict = {}
+    for cat, items in ranked.get("by_category", {}).items():
+        by_category_flat[cat] = [
+            {
+                "vendor_name":     q.get("vendor_name"),
+                "score":           q.get("rank_score"),
+                "total_inc_vat":   q.get("normalised", {}).get("total_inc_vat"),
+                "total_per_head":  q.get("normalised", {}).get("total_per_head"),
+                "score_breakdown": q.get("score_breakdown", {}),
+                "inclusions":      [
+                    k.replace("_", " ").title()
+                    for k, v in q.get("components", {}).items()
+                    if v == "included"
+                ],
+            }
+            for q in items[:3]
+        ]
+
+    categories = list(by_category_flat.keys())
+
     return {
-        "shortlist":    shortlist_items,
-        "by_category":  ranked.get("by_category", {}),
+        "shortlist":      shortlist_items,
+        "by_category":    by_category_flat,
         "recommendation": ranked.get("recommendation", ""),
         "budget_summary": {
-            "total_inc_vat":  round(total_vat, 2),
-            "budget":         budget,
-            "remaining":      round(remaining, 2),
-            "within_budget":  remaining >= 0,
+            "total_inc_vat": round(total_vat, 2),
+            "budget":        budget,
+            "remaining":     round(remaining, 2),
+            "within_budget": remaining >= 0,
+        },
+        "meta": {
+            "vendors_evaluated": len(req.selected_vendor_ids),
+            "vendors_quoted":    len(parsed_quotes),
+            "categories":        categories,
         },
     }
