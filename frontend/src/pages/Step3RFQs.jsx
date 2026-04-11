@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import axios from 'axios'
+import api from '../api'
 
 const CAT_LABEL = {
   venue:     'Venue',
@@ -142,7 +142,7 @@ export default function Step3RFQs({ selectedVendors, brief, onBack, onContinue }
     }
     async function load() {
       try {
-        const res = await axios.post('/api/preview-rfqs', {
+        const res = await api.post('/api/preview-rfqs', {
           brief,
           selected_vendor_ids: vendors.map(v => v.id),
         })

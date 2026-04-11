@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import axios from 'axios'
+import api from '../api'
 import LoadingSpinner from '../components/LoadingSpinner'
 
 // ─── Category metadata ────────────────────────────────────────
@@ -150,7 +150,7 @@ export default function Step4Shortlist({ brief, selectedVendorIds, onBack, onRes
   useEffect(() => {
     async function load() {
       try {
-        const res = await axios.post('/api/shortlist', {
+        const res = await api.post('/api/shortlist', {
           brief,
           selected_vendor_ids: selectedVendorIds,
         })

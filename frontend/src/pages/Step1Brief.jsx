@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import axios from 'axios'
+import api from '../api'
 import LoadingSpinner from '../components/LoadingSpinner'
 
 const DEMO_BRIEF =
@@ -47,7 +47,7 @@ export default function Step1Brief({ onComplete }) {
     setLoading(true)
     setError(null)
     try {
-      const res = await axios.post('/api/route', { brief: briefText })
+      const res = await api.post('/api/route', { brief: briefText })
       onComplete(res.data, res.data.brief)
     } catch (err) {
       setError(err.response?.data?.detail || 'Something went wrong. Check the backend is running.')
