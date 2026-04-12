@@ -1,10 +1,10 @@
-const STEPS = ['Describe Event', 'Select Vendors', 'Review RFQs', 'Best Match']
+const STEPS = ['Describe Event', 'Select Vendors', 'Send RFQs']
 
 export default function Stepper({ currentStep }) {
   return (
     <div style={{
       display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-      padding: '32px 0 24px', maxWidth: 560, margin: '0 auto',
+      padding: '32px 0 24px', maxWidth: 480, margin: '0 auto',
     }}>
       {STEPS.map((label, i) => {
         const step     = i + 1

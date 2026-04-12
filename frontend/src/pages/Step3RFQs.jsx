@@ -311,7 +311,7 @@ export default function Step3RFQs({ selectedVendors, brief, onBack, onContinue }
           onClick={onContinue}
           disabled={loading}
         >
-          {loading ? 'Generating…' : 'Show Best Match →'}
+          {loading ? 'Generating…' : `Send ${readyCount} RFQ${readyCount !== 1 ? 's' : ''} →`}
         </button>
       </div>
     </>

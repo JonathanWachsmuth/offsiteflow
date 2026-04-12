@@ -1,245 +1,200 @@
-import { useState, useEffect } from 'react'
-import api from '../api'
-import LoadingSpinner from '../components/LoadingSpinner'
+import { useState } from 'react'
 
-function StatCard({ label, value, sub, color }) {
-  return (
-    <div style={{
-      background: 'white', borderRadius: 14, border: '1px solid var(--border)',
-      boxShadow: '0 2px 8px rgba(13,27,62,0.05)', padding: '22px 24px',
-      flex: 1, minWidth: 160,
-    }}>
-      <div style={{ fontSize: 13, color: 'var(--text-light)', fontWeight: 500, marginBottom: 8 }}>
-        {label}
-      </div>
-      <div style={{ fontSize: 30, fontWeight: 800, color: color || 'var(--navy)', lineHeight: 1.1 }}>
-        {value}
-      </div>
-      {sub && (
-        <div style={{ fontSize: 13, color: 'var(--text-mid)', marginTop: 4 }}>{sub}</div>
-      )}
-    </div>
-  )
+const CAT_LABEL = {
+  venue: 'Venue', catering: 'Catering',
+  activity: 'Activity', transport: 'Transport',
 }
 
-function BarChart({ data, label, color = '#6366F1' }) {
-  if (!data || Object.keys(data).length === 0) return null
-  const max = Math.max(...Object.values(data))
-  return (
-    <div>
-      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-mid)', marginBottom: 12 }}>
-        {label}
-      </div>
-      {Object.entries(data).map(([key, val]) => (
-        <div key={key} style={{ marginBottom: 8 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-            <span style={{ fontSize: 13, color: 'var(--text-dark)', fontWeight: 500 }}>
-              {key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
-            </span>
-            <span style={{ fontSize: 13, color: 'var(--text-mid)' }}>{val}</span>
-          </div>
-          <div style={{ height: 6, background: '#F3F4F6', borderRadius: 3, overflow: 'hidden' }}>
-            <div style={{
-              height: '100%', borderRadius: 3,
-              background: `linear-gradient(90deg, ${color}, ${color}88)`,
-              width: `${(val / max) * 100}%`,
-              transition: 'width 0.6s ease',
-            }} />
-          </div>
-        </div>
-      ))}
-    </div>
-  )
+// Synthetic RFQ statuses for demo
+const STATUS_MAP = {
+  sent:     { label: 'Sent',     bg: '#EFF6FF', color: '#1565C0' },
+  opened:   { label: 'Opened',   bg: '#FFF7ED', color: '#EA580C' },
+  replied:  { label: 'Replied',  bg: '#F0FDF4', color: '#16A34A' },
+  pending:  { label: 'Pending',  bg: '#F3F4F6', color: '#6B7280' },
 }
 
-function EventRow({ event }) {
-  const statusColors = {
-    sourcing:   { bg: '#EFF6FF', color: '#1565C0' },
-    booked:     { bg: '#F0FDF4', color: '#16A34A' },
-    completed:  { bg: '#F3F4F6', color: '#6B7280' },
-    cancelled:  { bg: '#FEF2F2', color: '#DC2626' },
-  }
-  const sc = statusColors[event.status] || { bg: '#F3F4F6', color: '#6B7280' }
-
+function RFQStatusCard({ vendor, status }) {
+  const s = STATUS_MAP[status] || STATUS_MAP.pending
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      padding: '14px 0', borderBottom: '1px solid var(--border)',
-      flexWrap: 'wrap', gap: 8,
+      background: 'white', borderRadius: 14,
+      border: '1px solid var(--border)',
+      padding: '16px 20px',
+      boxShadow: '0 2px 8px rgba(13,27,62,0.04)',
     }}>
-      <div style={{ flex: 1, minWidth: 200 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy)' }}>
-          {event.name || `${event.type || 'Event'} — ${event.city || '—'}`}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--navy)' }}>
+            {vendor.name}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-light)', marginTop: 2 }}>
+            {CAT_LABEL[vendor.category] || vendor.category}
+            {vendor.email && <span> &middot; {vendor.email}</span>}
+          </div>
+          {vendor.website && (
+            <a
+              href={vendor.website}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ fontSize: 11, color: 'var(--blue)', textDecoration: 'none' }}
+            >
+              {vendor.website.replace(/^https?:\/\//, '').replace(/\/$/, '').substring(0, 35)}
+              &nbsp;&#8599;
+            </a>
+          )}
         </div>
-        <div style={{ fontSize: 13, color: 'var(--text-light)', marginTop: 2 }}>
-          {event.city || '—'}
-          {event.date_start ? ` · ${event.date_start}` : ''}
-          {event.headcount ? ` · ${event.headcount} people` : ''}
-        </div>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-        {event.budget_total && (
-          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy)' }}>
-            £{event.budget_total.toLocaleString()}
-          </span>
-        )}
         <span style={{
-          background: sc.bg, color: sc.color,
-          borderRadius: 20, padding: '3px 12px',
+          background: s.bg, color: s.color,
+          borderRadius: 20, padding: '4px 12px',
           fontSize: 12, fontWeight: 600,
         }}>
-          {event.status || 'unknown'}
+          {s.label}
         </span>
       </div>
     </div>
   )
 }
 
-export default function Dashboard() {
-  const [data,    setData]    = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error,   setError]   = useState(null)
+function assignDemoStatus(index) {
+  // Simulate realistic status distribution for demo
+  const statuses = ['replied', 'replied', 'opened', 'sent', 'pending']
+  return statuses[index % statuses.length]
+}
 
-  useEffect(() => {
-    api.get('/api/events')
-      .then(res => setData(res.data))
-      .catch(err => setError(err.message))
-      .finally(() => setLoading(false))
-  }, [])
+export default function Dashboard({ brief, selectedVendors, onFindBestMatch, onNewEvent }) {
+  const hasEvent = brief && selectedVendors && selectedVendors.length > 0
+  const [sent, setSent] = useState(false)
 
-  if (loading) return <LoadingSpinner text="Loading dashboard..." />
-  if (error) return (
-    <div className="page-container">
-      <p style={{ color: '#DC2626' }}>Failed to load: {error}</p>
-    </div>
-  )
+  if (!hasEvent) {
+    return (
+      <div className="page-container narrow" style={{ textAlign: 'center', paddingTop: 80 }}>
+        <div style={{
+          width: 72, height: 72, borderRadius: '50%',
+          background: '#F5F7FF', display: 'flex',
+          alignItems: 'center', justifyContent: 'center',
+          margin: '0 auto 24px', fontSize: 32,
+        }}>
+          📋
+        </div>
+        <h2 style={{ fontSize: 26, fontWeight: 700, color: 'var(--navy)', marginBottom: 12 }}>
+          No active events
+        </h2>
+        <p style={{ fontSize: 15, color: 'var(--text-mid)', marginBottom: 28, lineHeight: 1.6 }}>
+          Start by creating a new event brief. We'll match you with the best vendors
+          and help you send RFQs.
+        </p>
+        <button className="btn-primary" onClick={onNewEvent}>
+          Create New Event &rarr;
+        </button>
+      </div>
+    )
+  }
 
-  const { stats, vendor_stats, events } = data
+  const categories = [...new Set(selectedVendors.map(v => v.category))]
+  const repliedCount = selectedVendors.filter((_, i) => assignDemoStatus(i) === 'replied').length
 
   return (
     <div className="page-container wide">
       {/* Header */}
       <div style={{ marginBottom: 28 }}>
         <h2 style={{ fontSize: 28, fontWeight: 700, color: 'var(--navy)', marginBottom: 6 }}>
-          Dashboard
+          Event Dashboard
         </h2>
         <p style={{ fontSize: 15, color: 'var(--text-mid)' }}>
-          Overview of events and vendor database
+          Track your RFQ responses and find the best vendor package
         </p>
       </div>
 
-      {/* Event KPI row */}
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 24 }}>
-        <StatCard
-          label="Total Events"
-          value={stats.total_events}
-          sub="all time"
-        />
-        <StatCard
-          label="Total Budget"
-          value={`£${(stats.total_budget || 0).toLocaleString()}`}
-          sub="across all events"
-          color="var(--blue)"
-        />
-        <StatCard
-          label="Avg Budget"
-          value={`£${(stats.avg_budget || 0).toLocaleString()}`}
-          sub="per event"
-          color="var(--purple)"
-        />
-        <StatCard
-          label="Total Guests"
-          value={(stats.total_headcount || 0).toLocaleString()}
-          sub="across all events"
-        />
-      </div>
-
-      {/* Vendor KPI row */}
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 32 }}>
-        <StatCard
-          label="Vendors in DB"
-          value={(vendor_stats.total || 0).toLocaleString()}
-          sub="across all cities"
-          color="var(--navy)"
-        />
-        <StatCard
-          label="With Email"
-          value={`${vendor_stats.with_email || 0}`}
-          sub={`${vendor_stats.email_rate || 0}% reachable`}
-          color="var(--success)"
-        />
-        {Object.entries(vendor_stats.by_category || {}).map(([cat, count]) => (
-          <StatCard
-            key={cat}
-            label={cat.charAt(0).toUpperCase() + cat.slice(1)}
-            value={count}
-            sub="vendors"
-          />
-        ))}
-      </div>
-
-      {/* Charts + Events table */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 24 }}>
-
-        {/* By city */}
-        <div style={{
-          background: 'white', borderRadius: 16, border: '1px solid var(--border)',
-          padding: '24px 28px',
-        }}>
-          <BarChart
-            data={vendor_stats.by_city}
-            label="Vendors by city"
-            color="#6366F1"
-          />
-        </div>
-
-        {/* By status + type */}
-        <div style={{
-          background: 'white', borderRadius: 16, border: '1px solid var(--border)',
-          padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 28,
-        }}>
-          <BarChart
-            data={stats.by_status}
-            label="Events by status"
-            color="#1565C0"
-          />
-          <BarChart
-            data={stats.by_type}
-            label="Events by type"
-            color="#16A34A"
-          />
-        </div>
-      </div>
-
-      {/* Monthly trend */}
-      {Object.keys(stats.monthly_trend || {}).length > 0 && (
-        <div style={{
-          background: 'white', borderRadius: 16, border: '1px solid var(--border)',
-          padding: '24px 28px', marginBottom: 24,
-        }}>
-          <BarChart
-            data={stats.monthly_trend}
-            label="Events per month"
-            color="#6366F1"
-          />
-        </div>
-      )}
-
-      {/* Events table */}
+      {/* Event summary card */}
       <div style={{
         background: 'white', borderRadius: 16, border: '1px solid var(--border)',
-        padding: '24px 28px',
+        padding: '24px 28px', marginBottom: 24,
+        boxShadow: '0 2px 8px rgba(13,27,62,0.05)',
       }}>
-        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--navy)', marginBottom: 16 }}>
-          All Events
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '1.2px', textTransform: 'uppercase', color: 'var(--text-light)', marginBottom: 8 }}>
+              Current Event
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--navy)' }}>
+              {brief.event_type?.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) || 'Corporate Event'}
+            </div>
+            <div style={{ fontSize: 14, color: 'var(--text-mid)', marginTop: 4 }}>
+              {brief.city || 'London'}
+              {brief.headcount && <span> &middot; {brief.headcount} people</span>}
+              {brief.budget_total && <span> &middot; £{Number(brief.budget_total).toLocaleString()} budget</span>}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <div style={{ textAlign: 'center', padding: '8px 20px', background: '#F5F7FF', borderRadius: 12 }}>
+              <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--blue)' }}>{selectedVendors.length}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-light)', marginTop: 2 }}>RFQs Sent</div>
+            </div>
+            <div style={{ textAlign: 'center', padding: '8px 20px', background: '#F0FDF4', borderRadius: 12 }}>
+              <div style={{ fontSize: 24, fontWeight: 800, color: '#16A34A' }}>{repliedCount}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-light)', marginTop: 2 }}>Responses</div>
+            </div>
+            <div style={{ textAlign: 'center', padding: '8px 20px', background: '#F3F4F6', borderRadius: 12 }}>
+              <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--navy)' }}>{categories.length}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-light)', marginTop: 2 }}>Categories</div>
+            </div>
+          </div>
         </div>
-        {events.length === 0 ? (
-          <p style={{ fontSize: 14, color: 'var(--text-light)', textAlign: 'center', padding: '32px 0' }}>
-            No events yet — run the pipeline to create your first event.
-          </p>
-        ) : (
-          events.map(e => <EventRow key={e.id} event={e} />)
-        )}
+      </div>
+
+      {/* RFQ Status Grid */}
+      {categories.map(cat => {
+        const catVendors = selectedVendors.filter(v => v.category === cat)
+        return (
+          <div key={cat} style={{ marginBottom: 24 }}>
+            <div style={{
+              fontSize: 11, fontWeight: 700, letterSpacing: '1.5px',
+              color: 'var(--text-light)', textTransform: 'uppercase',
+              marginBottom: 12,
+            }}>
+              {CAT_LABEL[cat] || cat}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 12 }}>
+              {catVendors.map((v, i) => (
+                <RFQStatusCard
+                  key={v.id}
+                  vendor={v}
+                  status={assignDemoStatus(selectedVendors.indexOf(v))}
+                />
+              ))}
+            </div>
+          </div>
+        )
+      })}
+
+      {/* Find Best Match CTA */}
+      <div style={{
+        background: 'linear-gradient(135deg, #1a1b4b 0%, #2d3a8c 100%)',
+        borderRadius: 16, padding: '32px 36px',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        flexWrap: 'wrap', gap: 20, marginTop: 8,
+      }}>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: 'white', marginBottom: 6 }}>
+            Ready to find your best match?
+          </div>
+          <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.7)' }}>
+            Our AI will analyse all {repliedCount} vendor responses and recommend the optimal package for your budget.
+          </div>
+        </div>
+        <button
+          onClick={onFindBestMatch}
+          style={{
+            background: 'white', border: 'none',
+            borderRadius: 10, padding: '14px 28px',
+            fontSize: 15, fontWeight: 700, color: '#1a1b4b',
+            cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+            boxShadow: '0 2px 12px rgba(0,0,0,0.15)',
+            transition: 'transform 0.15s',
+          }}
+        >
+          Find Best Match &rarr;
+        </button>
       </div>
     </div>
   )

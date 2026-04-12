@@ -5,16 +5,21 @@ import Step1Brief from './pages/Step1Brief'
 import Step2Vendors from './pages/Step2Vendors'
 import Step3RFQs from './pages/Step3RFQs'
 import Step4Shortlist from './pages/Step4Shortlist'
+import Dashboard from './pages/Dashboard'
+import Analytics from './pages/Analytics'
 
 export default function App() {
-  const [step,           setStep]           = useState(1)
-  const [brief,          setBrief]          = useState(null)
-  const [routingResult,  setRoutingResult]  = useState(null)
-  const [selected,       setSelected]       = useState({})   // vendorId -> bool
-  const [selectedIds,    setSelectedIds]    = useState([])
+  // Page-level navigation: dashboard | wizard | analytics | shortlist
+  const [page, setPage] = useState('wizard')
+
+  // Wizard state
+  const [step,            setStep]            = useState(1)
+  const [brief,           setBrief]           = useState(null)
+  const [routingResult,   setRoutingResult]   = useState(null)
+  const [selected,        setSelected]        = useState({})
+  const [selectedIds,     setSelectedIds]     = useState([])
   const [selectedVendors, setSelectedVendors] = useState([])
 
-  // Flatten all vendors from routingResult for lookup
   function getAllVendors(result) {
     if (!result?.matches) return []
     return Object.values(result.matches).flat()
@@ -23,11 +28,8 @@ export default function App() {
   function handleStep1Complete(result, parsedBrief) {
     setRoutingResult(result)
     setBrief(parsedBrief)
-    // Default: none selected — user picks manually
     const init = {}
-    getAllVendors(result).forEach(v => {
-      init[v.id] = false
-    })
+    getAllVendors(result).forEach(v => { init[v.id] = false })
     setSelected(init)
     setStep(2)
   }
@@ -43,7 +45,18 @@ export default function App() {
     setStep(3)
   }
 
-  function handleRestart() {
+  function handleRFQsSent() {
+    // After sending RFQs, go to Dashboard
+    setPage('dashboard')
+  }
+
+  function handleFindBestMatch() {
+    // From Dashboard → show shortlist
+    setPage('shortlist')
+  }
+
+  function handleNewEvent() {
+    setPage('wizard')
     setStep(1)
     setBrief(null)
     setRoutingResult(null)
@@ -52,42 +65,76 @@ export default function App() {
     setSelectedVendors([])
   }
 
+  function handleNavigate(target) {
+    if (target === 'wizard') {
+      // If we have an active event, start fresh
+      if (!brief) {
+        setStep(1)
+      }
+      setPage('wizard')
+    } else {
+      setPage(target)
+    }
+  }
+
   return (
     <div>
-      <NavBar />
+      <NavBar currentPage={page} onNavigate={handleNavigate} />
       <div style={{ paddingTop: 64 }}>
-        <Stepper currentStep={step} />
 
-        {step === 1 && (
-          <Step1Brief onComplete={handleStep1Complete} />
+        {/* ─── Wizard Flow ─── */}
+        {page === 'wizard' && (
+          <>
+            <Stepper currentStep={step} />
+
+            {step === 1 && (
+              <Step1Brief onComplete={handleStep1Complete} />
+            )}
+
+            {step === 2 && routingResult && (
+              <Step2Vendors
+                routingResult={routingResult}
+                brief={brief}
+                selected={selected}
+                onToggle={handleToggle}
+                onBack={() => setStep(1)}
+                onContinue={handleStep2Continue}
+              />
+            )}
+
+            {step === 3 && (
+              <Step3RFQs
+                selectedVendors={selectedVendors}
+                brief={brief}
+                onBack={() => setStep(2)}
+                onContinue={handleRFQsSent}
+              />
+            )}
+          </>
         )}
 
-        {step === 2 && routingResult && (
-          <Step2Vendors
-            routingResult={routingResult}
+        {/* ─── Dashboard (RFQ tracking) ─── */}
+        {page === 'dashboard' && (
+          <Dashboard
             brief={brief}
-            selected={selected}
-            onToggle={handleToggle}
-            onBack={() => setStep(1)}
-            onContinue={handleStep2Continue}
-          />
-        )}
-
-        {step === 3 && (
-          <Step3RFQs
             selectedVendors={selectedVendors}
-            brief={brief}
-            onBack={() => setStep(2)}
-            onContinue={() => setStep(4)}
+            onFindBestMatch={handleFindBestMatch}
+            onNewEvent={handleNewEvent}
           />
         )}
 
-        {step === 4 && (
+        {/* ─── Analytics ─── */}
+        {page === 'analytics' && (
+          <Analytics />
+        )}
+
+        {/* ─── Shortlist (Best Match) ─── */}
+        {page === 'shortlist' && (
           <Step4Shortlist
             brief={brief}
             selectedVendorIds={selectedIds}
-            onBack={() => setStep(3)}
-            onRestart={handleRestart}
+            onBack={() => setPage('dashboard')}
+            onRestart={handleNewEvent}
           />
         )}
       </div>
