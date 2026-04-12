@@ -75,17 +75,56 @@ function VendorCard({ vendor, isSelected, onToggle }) {
         {vendor.rating_external && (
           <span> &nbsp;&middot;&nbsp; &#9733; {vendor.rating_external}</span>
         )}
-      </div>
-
-      <div style={{ fontSize: 13, color: 'var(--text-mid)', marginTop: 2 }}>
         {vendor.capacity_min && vendor.capacity_max
-          ? <span>{vendor.capacity_min}&ndash;{vendor.capacity_max}</span>
+          ? <span> &nbsp;&middot;&nbsp; {vendor.capacity_min}&ndash;{vendor.capacity_max} guests</span>
           : vendor.capacity_max
-          ? <span>Up to {vendor.capacity_max}</span>
+          ? <span> &nbsp;&middot;&nbsp; Up to {vendor.capacity_max} guests</span>
           : null
         }
         {tier && <span> &nbsp;&middot;&nbsp; {tier}</span>}
       </div>
+
+      {/* Description */}
+      {vendor.description && (
+        <div style={{
+          fontSize: 13, color: '#4B5563', marginTop: 8,
+          lineHeight: 1.5,
+          display: '-webkit-box', WebkitLineClamp: 3,
+          WebkitBoxOrient: 'vertical', overflow: 'hidden',
+        }}>
+          {vendor.description}
+        </div>
+      )}
+
+      {/* AI match reason */}
+      {vendor.reason && (
+        <div style={{
+          fontSize: 12, color: 'var(--blue)', marginTop: 8,
+          fontStyle: 'italic',
+        }}>
+          {vendor.reason}
+        </div>
+      )}
+
+      {/* Website */}
+      {vendor.website && (
+        <div style={{ marginTop: 8 }}>
+          <a
+            href={vendor.website}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={e => e.stopPropagation()}
+            style={{
+              fontSize: 12, color: 'var(--blue)',
+              textDecoration: 'none',
+            }}
+          >
+            {vendor.website.replace(/^https?:\/\//, '').replace(/\/$/, '').substring(0, 40)}
+            {vendor.website.replace(/^https?:\/\//, '').replace(/\/$/, '').length > 40 ? '…' : ''}
+            &nbsp;&#8599;
+          </a>
+        </div>
+      )}
 
       {/* Tags */}
       {tags.length > 0 && (

@@ -56,6 +56,29 @@ function RFQCard({ preview }) {
               To: {preview.email_to}
             </div>
           )}
+          {preview.website && (
+            <div style={{ fontSize: 12, marginTop: 2 }}>
+              <a
+                href={preview.website}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: 'var(--blue)', textDecoration: 'none' }}
+              >
+                {preview.website.replace(/^https?:\/\//, '').replace(/\/$/, '').substring(0, 45)}
+                {preview.website.replace(/^https?:\/\//, '').replace(/\/$/, '').length > 45 ? '…' : ''}
+                &nbsp;&#8599;
+              </a>
+            </div>
+          )}
+          {preview.description && (
+            <div style={{
+              fontSize: 12, color: '#4B5563', marginTop: 6, lineHeight: 1.5,
+              display: '-webkit-box', WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical', overflow: 'hidden',
+            }}>
+              {preview.description}
+            </div>
+          )}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>

@@ -318,13 +318,15 @@ def api_preview_rfqs(req: PreviewRFQsRequest):
                 f"{brief.get('city', 'London')}"
             )
             return {
-                "vendor_id":   vid,
-                "vendor_name": name,
-                "category":    cat,
-                "subject":     subject,
-                "plain_body":  body,
-                "has_email":   has_email,
-                "email_to":    vendor.get("email") or "(no email on file)",
+                "vendor_id":    vid,
+                "vendor_name":  name,
+                "category":     cat,
+                "subject":      subject,
+                "plain_body":   body,
+                "has_email":    has_email,
+                "email_to":     vendor.get("email") or "(no email on file)",
+                "website":      vendor.get("website"),
+                "description":  vendor.get("description"),
             }
         except Exception as exc:
             logger.warning("RFQ preview failed for %s: %s", name, exc)

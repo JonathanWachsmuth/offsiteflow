@@ -23,10 +23,10 @@ export default function App() {
   function handleStep1Complete(result, parsedBrief) {
     setRoutingResult(result)
     setBrief(parsedBrief)
-    // Default: select vendors that have an email
+    // Default: none selected — user picks manually
     const init = {}
     getAllVendors(result).forEach(v => {
-      init[v.id] = Boolean(v.email)
+      init[v.id] = false
     })
     setSelected(init)
     setStep(2)
