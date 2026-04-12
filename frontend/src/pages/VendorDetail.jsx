@@ -46,7 +46,12 @@ export default function VendorDetail({ vendorId, onBack }) {
         const key = `vendor-notes-${vendorId}`
         setNotes(localStorage.getItem(key) || '')
       } catch (err) {
-        setError(err.response?.data?.detail || 'Could not load vendor.')
+        const msg = err.response?.data?.detail
+        if (msg === 'Not Found' || err.response?.status === 404) {
+          setError('Vendor not found. The backend may still be deploying — try again in a moment.')
+        } else {
+          setError(msg || 'Could not load vendor. Please try again.')
+        }
       } finally {
         setLoading(false)
       }
@@ -71,8 +76,15 @@ export default function VendorDetail({ vendorId, onBack }) {
   if (error || !vendor) {
     return (
       <div className="page-container narrow" style={{ textAlign: 'center', paddingTop: 80 }}>
-        <div style={{ fontSize: 15, color: '#DC2626', marginBottom: 16 }}>{error || 'Vendor not found.'}</div>
-        <button className="btn-ghost" onClick={onBack}>Back</button>
+        <div style={{
+          background: 'white', borderRadius: 16, border: '1px solid var(--border)',
+          padding: '40px 32px', maxWidth: 440, margin: '0 auto',
+        }}>
+          <div style={{ fontSize: 15, color: 'var(--text-mid)', marginBottom: 20, lineHeight: 1.6 }}>
+            {error || 'Vendor not found.'}
+          </div>
+          <button className="btn-ghost" onClick={onBack}>&larr; Go back</button>
+        </div>
       </div>
     )
   }
