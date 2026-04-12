@@ -48,7 +48,7 @@ function ResultItem({ vendor, isActive, onClick }) {
   )
 }
 
-export default function CommandPalette({ open, onClose, onNavigateVendors }) {
+export default function CommandPalette({ open, onClose, onNavigateVendors, onViewVendor }) {
   const [query, setQuery]       = useState('')
   const [results, setResults]   = useState([])
   const [loading, setLoading]   = useState(false)
@@ -102,10 +102,8 @@ export default function CommandPalette({ open, onClose, onNavigateVendors }) {
   }, [results, activeIdx, onClose])
 
   function handleSelect(vendor) {
-    if (vendor.website) {
-      window.open(vendor.website, '_blank', 'noopener,noreferrer')
-    }
     onClose()
+    onViewVendor?.(vendor.id)
   }
 
   // Global Cmd+K listener
@@ -204,7 +202,7 @@ export default function CommandPalette({ open, onClose, onNavigateVendors }) {
         }}>
           <div style={{ display: 'flex', gap: 12 }}>
             <span><kbd style={{ padding: '1px 5px', borderRadius: 4, background: '#F3F4F6', border: '1px solid #E5E7EB', fontSize: 11 }}>&uarr;&darr;</kbd> navigate</span>
-            <span><kbd style={{ padding: '1px 5px', borderRadius: 4, background: '#F3F4F6', border: '1px solid #E5E7EB', fontSize: 11 }}>&#9166;</kbd> open website</span>
+            <span><kbd style={{ padding: '1px 5px', borderRadius: 4, background: '#F3F4F6', border: '1px solid #E5E7EB', fontSize: 11 }}>&#9166;</kbd> view vendor</span>
           </div>
           <button
             onClick={() => { onClose(); onNavigateVendors?.() }}

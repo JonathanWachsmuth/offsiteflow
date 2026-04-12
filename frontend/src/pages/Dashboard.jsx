@@ -13,7 +13,7 @@ const STATUS_MAP = {
   pending:  { label: 'Pending',  bg: '#F3F4F6', color: '#6B7280' },
 }
 
-function RFQStatusCard({ vendor, status }) {
+function RFQStatusCard({ vendor, status, onViewVendor }) {
   const s = STATUS_MAP[status] || STATUS_MAP.pending
   return (
     <div style={{
@@ -24,7 +24,10 @@ function RFQStatusCard({ vendor, status }) {
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--navy)' }}>
+          <div
+            onClick={() => onViewVendor?.(vendor.id)}
+            style={{ fontSize: 15, fontWeight: 700, color: 'var(--navy)', cursor: 'pointer' }}
+          >
             {vendor.name}
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-light)', marginTop: 2 }}>
@@ -61,7 +64,7 @@ function assignDemoStatus(index) {
   return statuses[index % statuses.length]
 }
 
-export default function Dashboard({ brief, selectedVendors, onFindBestMatch, onNewEvent }) {
+export default function Dashboard({ brief, selectedVendors, onFindBestMatch, onNewEvent, onViewVendor }) {
   const hasEvent = brief && selectedVendors && selectedVendors.length > 0
   const [sent, setSent] = useState(false)
 
@@ -163,6 +166,7 @@ export default function Dashboard({ brief, selectedVendors, onFindBestMatch, onN
                   key={v.id}
                   vendor={v}
                   status={assignDemoStatus(selectedVendors.indexOf(v))}
+                  onViewVendor={onViewVendor}
                 />
               ))}
             </div>

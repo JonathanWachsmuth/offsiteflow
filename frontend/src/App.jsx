@@ -9,11 +9,14 @@ import Step4Shortlist from './pages/Step4Shortlist'
 import Dashboard from './pages/Dashboard'
 import Analytics from './pages/Analytics'
 import VendorSearch from './pages/VendorSearch'
+import VendorDetail from './pages/VendorDetail'
 import EventRSVP from './pages/EventRSVP'
 
 export default function App() {
-  // Page-level navigation: dashboard | wizard | analytics | shortlist | vendors | rsvp
+  // Page-level navigation: dashboard | wizard | analytics | shortlist | vendors | vendor-detail | rsvp
   const [page, setPage] = useState('wizard')
+  const [viewVendorId, setViewVendorId] = useState(null)
+  const [prevPage, setPrevPage]         = useState(null)
 
   // Command palette (Cmd+K)
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -81,6 +84,17 @@ export default function App() {
     setSelectedVendors([])
   }
 
+  function handleViewVendor(vendorId) {
+    setPrevPage(page)
+    setViewVendorId(vendorId)
+    setPage('vendor-detail')
+  }
+
+  function handleBackFromVendor() {
+    setPage(prevPage || 'vendors')
+    setViewVendorId(null)
+  }
+
   function handleNavigate(target) {
     if (target === 'wizard') {
       if (!brief) {
@@ -103,6 +117,7 @@ export default function App() {
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
         onNavigateVendors={() => setPage('vendors')}
+        onViewVendor={handleViewVendor}
       />
       <div style={{ paddingTop: 64 }}>
 
@@ -132,6 +147,7 @@ export default function App() {
                 brief={brief}
                 onBack={() => setStep(2)}
                 onContinue={handleRFQsSent}
+                onViewVendor={handleViewVendor}
               />
             )}
           </>
@@ -144,6 +160,7 @@ export default function App() {
             selectedVendors={selectedVendors}
             onFindBestMatch={handleFindBestMatch}
             onNewEvent={handleNewEvent}
+            onViewVendor={handleViewVendor}
           />
         )}
 
@@ -154,7 +171,12 @@ export default function App() {
 
         {/* ─── Vendor Database ─── */}
         {page === 'vendors' && (
-          <VendorSearch />
+          <VendorSearch onViewVendor={handleViewVendor} />
+        )}
+
+        {/* ─── Vendor Detail ─── */}
+        {page === 'vendor-detail' && viewVendorId && (
+          <VendorDetail vendorId={viewVendorId} onBack={handleBackFromVendor} />
         )}
 
         {/* ─── RSVP & Chat ─── */}

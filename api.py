@@ -338,6 +338,15 @@ def api_vendors_quick_search(q: str = "", limit: int = Query(default=8, le=20)):
     return {"results": result.data}
 
 
+@app.get("/api/vendors/{vendor_id}")
+def api_vendor_detail(vendor_id: str):
+    """Get a single vendor by ID."""
+    result = sb.table("vendors").select("*").eq("id", vendor_id).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+    return result.data[0]
+
+
 @app.post("/api/route")
 def api_route(req: RouteRequest):
     """Parses brief and returns matched vendors per category."""

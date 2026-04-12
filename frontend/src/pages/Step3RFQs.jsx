@@ -21,7 +21,7 @@ function ShimmerBar() {
   )
 }
 
-function RFQCard({ preview, onUpdateBody }) {
+function RFQCard({ preview, onUpdateBody, onViewVendor }) {
   const [expanded, setExpanded] = useState(false)
   const [editing, setEditing]   = useState(false)
   const [draft, setDraft]       = useState(preview.plain_body || '')
@@ -37,7 +37,10 @@ function RFQCard({ preview, onUpdateBody }) {
       }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 17, fontWeight: 700, color: 'var(--navy)' }}>
+            <span
+              onClick={() => onViewVendor?.(preview.vendor_id)}
+              style={{ fontSize: 17, fontWeight: 700, color: 'var(--navy)', cursor: 'pointer' }}
+            >
               {preview.vendor_name}
             </span>
             <span style={{
@@ -221,7 +224,7 @@ function PlaceholderCard({ vendor }) {
   )
 }
 
-export default function Step3RFQs({ selectedVendors, brief, onBack, onContinue }) {
+export default function Step3RFQs({ selectedVendors, brief, onBack, onContinue, onViewVendor }) {
   const [previews, setPreviews] = useState(null)
   const [loading, setLoading]   = useState(true)
   const [error, setError]       = useState(null)
@@ -294,6 +297,7 @@ export default function Step3RFQs({ selectedVendors, brief, onBack, onContinue }
                 pr.vendor_id === vid ? { ...pr, plain_body: newBody } : pr
               ))
             }}
+            onViewVendor={onViewVendor}
           />
         ))}
       </div>

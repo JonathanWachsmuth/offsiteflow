@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import api from '../api'
 import LoadingSpinner from '../components/LoadingSpinner'
 
-function VendorCard({ vendor }) {
+function VendorCard({ vendor, onViewVendor }) {
   const hasEmail = Boolean(vendor.email)
   const tags = vendor.tags
     ? vendor.tags.split(',').map(t => t.trim()).filter(Boolean).slice(0, 3)
@@ -12,7 +12,8 @@ function VendorCard({ vendor }) {
     <div style={{
       background: 'white', borderRadius: 14, border: '1px solid var(--border)',
       boxShadow: '0 2px 8px rgba(13,27,62,0.05)', padding: '20px 22px',
-    }}>
+      cursor: 'pointer', transition: 'box-shadow 0.15s',
+    }} onClick={() => onViewVendor?.(vendor.id)}>
       {/* Top row */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
         <div style={{ flex: 1 }}>
@@ -87,7 +88,7 @@ function VendorCard({ vendor }) {
   )
 }
 
-export default function VendorSearch() {
+export default function VendorSearch({ onViewVendor }) {
   const [query,      setQuery]      = useState('')
   const [category,   setCategory]   = useState('')
   const [city,       setCity]       = useState('')
@@ -256,7 +257,7 @@ export default function VendorSearch() {
             gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
             gap: 16,
           }}>
-            {vendors.map(v => <VendorCard key={v.id} vendor={v} />)}
+            {vendors.map(v => <VendorCard key={v.id} vendor={v} onViewVendor={onViewVendor} />)}
           </div>
 
           {/* Load more */}
