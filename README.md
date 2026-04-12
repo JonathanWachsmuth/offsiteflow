@@ -1,240 +1,187 @@
 # OffsiteFlow
 
-AI-powered corporate event planning platform. Automates vendor discovery, RFQ outreach, response extraction, and shortlist generation.
+AI-powered corporate event planning platform. Automates vendor discovery, RFQ generation, response tracking, and shortlist recommendations — from event brief to booked vendors.
+
+**Live:** Deployed on Vercel (frontend) + Render (API) + Supabase (database)
 
 ---
 
-## Setup
+## Features
 
-**1. Clone and create a virtual environment**
+- **AI Brief Parsing** — Describe your event in natural language; Claude extracts structured requirements (headcount, budget, city, categories)
+- **Smart Vendor Matching** — Matches your brief against 2,000+ vendors across venue, catering, activity, and transport categories
+- **RFQ Generation** — AI-generated personalised email drafts for each vendor, editable before sending
+- **Dashboard** — Track RFQ status (sent, opened, replied) per vendor with category grouping
+- **Vendor Database** — Full searchable vendor directory with filters (category, city, rating, email availability)
+- **Cmd+K Search** — Global vendor search overlay accessible from anywhere
+- **Vendor Profiles** — Detailed vendor pages with contact info, capacity, pricing, and personal notes
+- **RSVP & Event Chat** — Internal event organisation with attendee management and team discussion
+- **Analytics** — Company-wide event insights with KPIs, spend breakdowns, and vendor performance
+- **Best Match** — AI-powered shortlist ranking vendors by budget fit, completeness, and value
+
+---
+
+## Tech Stack
+
+| Layer     | Technology                         |
+|-----------|------------------------------------|
+| Frontend  | React 19, Vite, Vercel             |
+| Backend   | Python, FastAPI, Render            |
+| Database  | Supabase (PostgreSQL)              |
+| AI        | Claude Sonnet 4 (Anthropic API)    |
+| Email     | Gmail SMTP                         |
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Python 3.11+
+- Node.js 18+
+- Supabase project (free tier works)
+- Anthropic API key
+
+### 1. Clone and install
 
 ```bash
-git clone https://github.com/JonathanWachsmuthIC/OffsiteFlow.git
-cd OffsiteFlow
+git clone https://github.com/JonathanWachsmuth/offsiteflow.git
+cd offsiteflow
+
+# Backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+
+# Frontend
+cd frontend
+npm install
+cd ..
 ```
 
-**2. Configure environment variables**
+### 2. Configure environment
 
-Copy `.env.example` to `.env` and fill in your keys:
-
-```bash
-cp .env.example .env
-```
+Copy `.env.example` to `.env` and add your keys:
 
 ```env
 ANTHROPIC_API_KEY=sk-ant-...
-GOOGLE_API_KEY=AIza...
-TALLY_FORM_URL=https://tally.so/r/YOUR_FORM_ID
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=eyJ...
 
 SMTP_EMAIL=you@gmail.com
-SMTP_PASSWORD=xxxx xxxx xxxx xxxx   # Gmail App Password — not your account password
+SMTP_PASSWORD=xxxx xxxx xxxx xxxx
 ```
 
-> **Gmail SMTP:** Your account password will not work. Generate an App Password at  
-> Google Account → Security → App Passwords (requires 2-Step Verification enabled).
+For the frontend, create `frontend/.env`:
 
-**3. Initialise the database**
+```env
+VITE_API_URL=http://localhost:8000
+```
+
+### 3. Run locally
 
 ```bash
-python3 -m db.migrate
+# Backend (terminal 1)
+uvicorn api:app --reload --port 8000
+
+# Frontend (terminal 2)
+cd frontend && npm run dev
 ```
 
-This creates `data/vendors.db` and applies all migrations in `db/migrations/`.
+The app opens at `http://localhost:5173`.
 
 ---
 
-## Running the pipeline
+## API Endpoints
 
-**Interactive mode (default — prompts for vendor approval before sending)**
-
-```bash
-python3 -m pipeline.cli
-```
-
-**Common flags**
-
-```bash
-# Send real emails instead of dry run
-python3 -m pipeline.cli --send
-
-# Redirect all outbound emails to your own address for testing
-python3 -m pipeline.cli --send --override-to you@example.com
-
-# Skip the vendor approval prompt (auto-approves top 3 per category)
-python3 -m pipeline.cli --no-interactive
-
-# Use real vendor responses from DB instead of synthetic ones
-python3 -m pipeline.cli --real-responses
-
-# Pass a custom event brief
-python3 -m pipeline.cli --brief "Team dinner for 20 people in Manchester, budget £3,000"
-
-# Save the shortlist to the database
-python3 -m pipeline.cli --save
-
-# Verbose logging
-python3 -m pipeline.cli --log-level INFO
-```
+| Method | Path                    | Description                          |
+|--------|-------------------------|--------------------------------------|
+| GET    | `/api/health`           | Health check                         |
+| POST   | `/api/route`            | Parse brief, match vendors           |
+| POST   | `/api/preview-rfqs`     | Generate RFQ email previews (LLM)    |
+| POST   | `/api/shortlist`        | Rank vendors and build shortlist     |
+| GET    | `/api/vendors`          | Search vendors with filters          |
+| GET    | `/api/vendors/search`   | Quick search for Cmd+K palette       |
+| GET    | `/api/vendors/{id}`     | Single vendor detail                 |
 
 ---
 
-## Running the app
+## Project Structure
 
-```bash
-streamlit run app.py
 ```
-
-Opens the Streamlit UI at `http://localhost:8501`.
-
----
-
-## Populating the vendor database
-
-**Option A — Google Places API (automated)**
-
-```bash
-python3 -m pipeline.collect.api_fetch
-```
-
-Collects vendors across venue / catering / activity / transport categories for London. Validates assumption A1.
-
-**Option B — Manual CSV import**
-
-Place your CSV at `data/raw/manual/vendors_seed.csv` with columns:  
-`name, category, city, email, website` (+ optional enrichment columns).
-
-```bash
-python3 -m pipeline.collect.manual_import
-```
-
-**Option C — Contact extraction**
-
-Extract emails from vendor websites already in the database:
-
-```bash
-python3 -m pipeline.collect.contact_extractor
-```
-
----
-
-## Running experiments
-
-Each experiment file is self-contained and logs results to the `experiments` table.
-
-```bash
-# A1 — Vendor availability via Google Places API
-python3 -m experiments.A1_vendor_availability
-
-# A2 — Contact reachability (email extraction)
-python3 -m experiments.A2_contact_reachability
-
-# A4 — LLM brief parsing
-python3 -m experiments.A4_llm_brief_parsing
-
-# A5 — Quote extraction accuracy
-python3 -m experiments.A5_response_extraction
-
-# A7 — Offer normalisation
-python3 -m experiments.A7_offer_normalisation
-
-# A8 — Offer filtering and ranking
-python3 -m experiments.A8_offer_filtering
+offsiteflow/
+├── api.py                        # FastAPI backend (all endpoints)
+├── app.py                        # Legacy Streamlit UI
+├── config/
+│   └── settings.py               # Environment config
+├── db/
+│   ├── supabase_client.py        # Supabase connection singleton
+│   ├── schema.sql                # Full database schema
+│   └── migrations/               # SQL migrations
+├── pipeline/
+│   ├── match/
+│   │   └── llm_router.py         # Brief parsing + vendor matching
+│   ├── outreach/
+│   │   ├── rfq_generator.py      # RFQ email generation (LLM)
+│   │   └── email_sender.py       # SMTP sending
+│   ├── extract/
+│   │   └── quote_parser.py       # Response extraction
+│   └── normalise/
+│       ├── normaliser.py         # Price normalisation
+│       └── ranker.py             # Scoring and ranking
+├── frontend/
+│   ├── index.html
+│   ├── src/
+│   │   ├── App.jsx               # Root — page routing and state
+│   │   ├── api.js                # Axios instance (configurable baseURL)
+│   │   ├── components/
+│   │   │   ├── NavBar.jsx        # Navigation bar
+│   │   │   ├── Stepper.jsx       # 3-step progress indicator
+│   │   │   └── CommandPalette.jsx # Cmd+K vendor search overlay
+│   │   └── pages/
+│   │       ├── Step1Brief.jsx    # Event description input
+│   │       ├── Step2Vendors.jsx  # Vendor selection grid
+│   │       ├── Step3RFQs.jsx     # RFQ preview and editing
+│   │       ├── Step4Shortlist.jsx # AI-ranked best match
+│   │       ├── Dashboard.jsx     # RFQ tracking hub
+│   │       ├── Analytics.jsx     # Company-wide analytics
+│   │       ├── VendorSearch.jsx  # Vendor database browser
+│   │       ├── VendorDetail.jsx  # Individual vendor profile
+│   │       └── EventRSVP.jsx     # RSVP and event chat
+│   └── public/
+│       ├── logo.png
+│       └── favicon.svg
+├── experiments/                   # Validation experiments (A1–A12)
+├── tests/                         # Unit tests (pytest)
+├── vercel.json                    # Vercel deployment config
+└── requirements.txt               # Python dependencies
 ```
 
 ---
 
-## Running tests
+## Deployment
+
+**Frontend** — Auto-deploys to Vercel on push to `main`
+- Build command: `cd frontend && npm install && npm run build`
+- Output directory: `frontend/dist`
+- Environment variable: `VITE_API_URL` pointing to Render backend
+
+**Backend** — Auto-deploys to Render on push to `main`
+- Start command: `uvicorn api:app --host 0.0.0.0 --port $PORT`
+- Environment variables: `ANTHROPIC_API_KEY`, `SUPABASE_URL`, `SUPABASE_KEY`, `SMTP_EMAIL`, `SMTP_PASSWORD`
+
+---
+
+## Tests
 
 ```bash
 pytest tests/
 ```
 
-Individual test files:
-
-```bash
-pytest tests/test_router.py     # LLM brief parsing and vendor routing
-pytest tests/test_parser.py     # Quote extraction from vendor responses
-pytest tests/test_normaliser.py # Price normalisation and component detection
-pytest tests/test_ranker.py     # Vendor ranking and scoring
-```
-
-Tests mock all external calls (LLM API, SMTP, SQLite) so no credentials are needed.
+Tests mock all external calls (LLM, SMTP, database) — no credentials needed.
 
 ---
 
-## Project structure
+## License
 
-```
-offsiteflow/
-├── app.py                      # Streamlit UI
-├── config/
-│   └── settings.py             # All config loaded from .env
-├── db/
-│   ├── connection.py           # SQLite context manager (get_db)
-│   ├── migrate.py              # Migration runner
-│   └── migrations/
-│       └── 001_initial.sql     # Full schema
-├── pipeline/
-│   ├── cli.py                  # CLI entry point (argparse + test data)
-│   ├── run.py                  # Pure orchestrator (no test data)
-│   ├── collect/
-│   │   ├── api_fetch.py        # Google Places vendor collection
-│   │   ├── contact_extractor.py # Email extraction from websites
-│   │   └── manual_import.py    # CSV → database import
-│   ├── match/
-│   │   └── llm_router.py       # Brief parsing + vendor matching
-│   ├── outreach/
-│   │   ├── rfq_generator.py    # Branded RFQ email generation
-│   │   └── email_sender.py     # SMTP send + outreach logging
-│   ├── extract/
-│   │   └── quote_parser.py     # LLM extraction from vendor replies
-│   └── normalise/
-│       ├── normaliser.py       # Price normalisation
-│       └── ranker.py           # Vendor scoring and shortlist
-├── tests/
-│   ├── fixtures/
-│   │   ├── test_briefs.py      # Test event briefs
-│   │   ├── synthetic_responses.py # Simulated vendor replies
-│   │   └── test_vendors.py     # Test vendor records
-│   ├── test_router.py
-│   ├── test_parser.py
-│   ├── test_normaliser.py
-│   └── test_ranker.py
-├── experiments/
-│   ├── A1_vendor_availability.py
-│   ├── A2_contact_reachability.py
-│   ├── A3_vendor_response_rate.py
-│   ├── A4_llm_brief_parsing.py
-│   ├── A5_response_extraction.py
-│   ├── A7_offer_normalisation.py
-│   └── A8_offer_filtering.py
-├── data/
-│   ├── vendors.db
-│   └── raw/
-│       ├── manual/             # Vendor CSVs
-│       ├── quotes/             # Raw vendor reply files
-│       └── scraped/            # Google Places JSON output
-└── output/
-    └── shortlists/             # Generated shortlist JSON files
-```
-
----
-
-## Validation board
-
-| ID  | Assumption                              | Status      | Evidence                        |
-|-----|-----------------------------------------|-------------|---------------------------------|
-| A1  | ≥200 vendors accessible via Places API  | VALIDATED   | 240 vendors found in London     |
-| A2  | ≥60% of vendors have extractable email  | VALIDATED   | 29/40 = 72.5% in manual test    |
-| A3  | ≥50% respond to RFQ within 72 hours     | NOT TESTED  | —                               |
-| A4  | LLM can parse brief + route vendors     | NOT TESTED  | —                               |
-| A5  | LLM extracts pricing with ≥80% accuracy | NOT TESTED  | —                               |
-| A7  | Offers normalised into comparable format| NOT TESTED  | —                               |
-| A8  | System ranks + filters offers auto      | NOT TESTED  | —                               |
-| A9  | Shortlist clear enough to book from     | NOT TESTED  | —                               |
-| A10 | Output format fits planner workflow     | NOT TESTED  | —                               |
-| A11 | ≥3 viable vendors surfaced per brief    | NOT TESTED  | —                               |
-| A12 | Full pipeline completes within 48 hours | NOT TESTED  | —                               |
+Private repository. All rights reserved.
