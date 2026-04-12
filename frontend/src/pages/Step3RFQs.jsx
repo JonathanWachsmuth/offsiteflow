@@ -21,8 +21,10 @@ function ShimmerBar() {
   )
 }
 
-function RFQCard({ preview }) {
+function RFQCard({ preview, onUpdateBody }) {
   const [expanded, setExpanded] = useState(false)
+  const [editing, setEditing]   = useState(false)
+  const [draft, setDraft]       = useState(preview.plain_body || '')
   const cat      = preview.category || 'venue'
   const hasError = Boolean(preview.error)
 
@@ -120,20 +122,88 @@ function RFQCard({ preview }) {
         </div>
       </div>
 
-      {/* Expandable email body */}
-      {expanded && preview.plain_body && (
-        <div style={{
-          marginTop: 16,
-          padding: '16px 20px',
-          background: '#F8FAFF',
-          borderRadius: 10,
-          border: '1px solid var(--border)',
-          fontSize: 14,
-          color: '#374151',
-          lineHeight: 1.8,
-          whiteSpace: 'pre-wrap',
-        }}>
-          {preview.plain_body}
+      {/* Expandable email body — editable */}
+      {expanded && draft && (
+        <div style={{ marginTop: 16 }}>
+          {editing ? (
+            <>
+              <textarea
+                value={draft}
+                onChange={e => setDraft(e.target.value)}
+                style={{
+                  width: '100%',
+                  minHeight: 220,
+                  padding: '16px 20px',
+                  background: '#FFFFF0',
+                  borderRadius: 10,
+                  border: '2px solid var(--blue)',
+                  fontSize: 14,
+                  color: '#374151',
+                  lineHeight: 1.8,
+                  fontFamily: 'Inter, sans-serif',
+                  resize: 'vertical',
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+              />
+              <div style={{ display: 'flex', gap: 8, marginTop: 8, justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => { setDraft(preview.plain_body); setEditing(false) }}
+                  style={{
+                    background: 'transparent', border: '1px solid var(--border)',
+                    borderRadius: 8, padding: '6px 14px',
+                    fontSize: 13, color: 'var(--text-mid)',
+                    cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+                  }}
+                >
+                  Discard
+                </button>
+                <button
+                  onClick={() => { onUpdateBody(preview.vendor_id, draft); setEditing(false) }}
+                  style={{
+                    background: 'var(--gradient)', border: 'none',
+                    borderRadius: 8, padding: '6px 14px',
+                    fontSize: 13, color: 'white', fontWeight: 600,
+                    cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+                  }}
+                >
+                  Save changes
+                </button>
+              </div>
+            </>
+          ) : (
+            <div
+              onClick={() => setEditing(true)}
+              style={{
+                padding: '16px 20px',
+                background: '#F8FAFF',
+                borderRadius: 10,
+                border: '1px solid var(--border)',
+                fontSize: 14,
+                color: '#374151',
+                lineHeight: 1.8,
+                whiteSpace: 'pre-wrap',
+                cursor: 'pointer',
+                position: 'relative',
+              }}
+            >
+              {draft}
+              {draft !== preview.plain_body && (
+                <span style={{
+                  position: 'absolute', top: 8, right: 12,
+                  fontSize: 11, color: 'var(--blue)', fontWeight: 600,
+                }}>
+                  edited
+                </span>
+              )}
+              <div style={{
+                marginTop: 8, fontSize: 12, color: 'var(--text-light)',
+                fontStyle: 'italic',
+              }}>
+                Click to edit
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -215,7 +285,17 @@ export default function Step3RFQs({ selectedVendors, brief, onBack, onContinue }
         {loading && vendors.map(v => <PlaceholderCard key={v.id} vendor={v} />)}
 
         {/* Real preview cards */}
-        {previews?.map(p => <RFQCard key={p.vendor_id} preview={p} />)}
+        {previews?.map(p => (
+          <RFQCard
+            key={p.vendor_id}
+            preview={p}
+            onUpdateBody={(vid, newBody) => {
+              setPreviews(prev => prev.map(pr =>
+                pr.vendor_id === vid ? { ...pr, plain_body: newBody } : pr
+              ))
+            }}
+          />
+        ))}
       </div>
 
       {/* Sticky bottom bar */}
