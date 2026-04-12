@@ -1,16 +1,22 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import NavBar from './components/NavBar'
 import Stepper from './components/Stepper'
+import CommandPalette from './components/CommandPalette'
 import Step1Brief from './pages/Step1Brief'
 import Step2Vendors from './pages/Step2Vendors'
 import Step3RFQs from './pages/Step3RFQs'
 import Step4Shortlist from './pages/Step4Shortlist'
 import Dashboard from './pages/Dashboard'
 import Analytics from './pages/Analytics'
+import VendorSearch from './pages/VendorSearch'
+import EventRSVP from './pages/EventRSVP'
 
 export default function App() {
-  // Page-level navigation: dashboard | wizard | analytics | shortlist
+  // Page-level navigation: dashboard | wizard | analytics | shortlist | vendors | rsvp
   const [page, setPage] = useState('wizard')
+
+  // Command palette (Cmd+K)
+  const [paletteOpen, setPaletteOpen] = useState(false)
 
   // Wizard state
   const [step,            setStep]            = useState(1)
@@ -19,6 +25,18 @@ export default function App() {
   const [selected,        setSelected]        = useState({})
   const [selectedIds,     setSelectedIds]     = useState([])
   const [selectedVendors, setSelectedVendors] = useState([])
+
+  // Global Cmd+K listener
+  useEffect(() => {
+    function handleKeyDown(e) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setPaletteOpen(prev => !prev)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
 
   function getAllVendors(result) {
     if (!result?.matches) return []
@@ -46,12 +64,10 @@ export default function App() {
   }
 
   function handleRFQsSent() {
-    // After sending RFQs, go to Dashboard
     setPage('dashboard')
   }
 
   function handleFindBestMatch() {
-    // From Dashboard → show shortlist
     setPage('shortlist')
   }
 
@@ -67,7 +83,6 @@ export default function App() {
 
   function handleNavigate(target) {
     if (target === 'wizard') {
-      // If we have an active event, start fresh
       if (!brief) {
         setStep(1)
       }
@@ -79,7 +94,16 @@ export default function App() {
 
   return (
     <div>
-      <NavBar currentPage={page} onNavigate={handleNavigate} />
+      <NavBar
+        currentPage={page}
+        onNavigate={handleNavigate}
+        onOpenSearch={() => setPaletteOpen(true)}
+      />
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onNavigateVendors={() => setPage('vendors')}
+      />
       <div style={{ paddingTop: 64 }}>
 
         {/* ─── Wizard Flow ─── */}
@@ -126,6 +150,16 @@ export default function App() {
         {/* ─── Analytics ─── */}
         {page === 'analytics' && (
           <Analytics />
+        )}
+
+        {/* ─── Vendor Database ─── */}
+        {page === 'vendors' && (
+          <VendorSearch />
+        )}
+
+        {/* ─── RSVP & Chat ─── */}
+        {page === 'rsvp' && (
+          <EventRSVP />
         )}
 
         {/* ─── Shortlist (Best Match) ─── */}

@@ -11,7 +11,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from fastapi import FastAPI, HTTPException
+from typing import Optional
+
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -274,6 +276,66 @@ class PreviewRFQsRequest(BaseModel):
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/api/vendors")
+def api_vendors(
+    q: str = "",
+    category: str = "",
+    city: str = "",
+    min_rating: float = 0,
+    has_email: bool = False,
+    limit: int = Query(default=24, le=100),
+    offset: int = 0,
+):
+    """Search and filter the vendor database."""
+    query = sb.table("vendors").select("*", count="exact")
+
+    if q:
+        query = query.or_(
+            f"name.ilike.%{q}%,tags.ilike.%{q}%,description.ilike.%{q}%,amenities.ilike.%{q}%"
+        )
+    if category:
+        query = query.eq("category", category)
+    if city:
+        query = query.eq("city", city)
+    if min_rating > 0:
+        query = query.gte("rating_external", min_rating)
+    if has_email:
+        query = query.neq("email", None).neq("email", "")
+
+    query = query.order("name").range(offset, offset + limit - 1)
+    result = query.execute()
+
+    # Distinct cities and categories for filter dropdowns
+    cities_res = sb.table("vendors").select("city").execute()
+    cats_res = sb.table("vendors").select("category").execute()
+    cities = sorted({r["city"] for r in cities_res.data if r.get("city")})
+    categories = sorted({r["category"] for r in cats_res.data if r.get("category")})
+
+    return {
+        "vendors": result.data,
+        "total": result.count or len(result.data),
+        "cities": cities,
+        "categories": categories,
+    }
+
+
+@app.get("/api/vendors/search")
+def api_vendors_quick_search(q: str = "", limit: int = Query(default=8, le=20)):
+    """Lightweight search for Cmd+K palette — returns minimal fields."""
+    if not q or len(q) < 2:
+        return {"results": []}
+
+    result = (
+        sb.table("vendors")
+        .select("id,name,category,city,email,website,rating_external")
+        .or_(f"name.ilike.%{q}%,tags.ilike.%{q}%,description.ilike.%{q}%")
+        .order("name")
+        .limit(limit)
+        .execute()
+    )
+    return {"results": result.data}
 
 
 @app.post("/api/route")

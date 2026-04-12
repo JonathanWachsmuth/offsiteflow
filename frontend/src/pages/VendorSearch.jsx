@@ -164,10 +164,12 @@ export default function VendorSearch() {
       }}>
         {/* Search input */}
         <div style={{ flex: 2, minWidth: 220, position: 'relative' }}>
-          <span style={{
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{
             position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
-            color: 'var(--text-light)', fontSize: 16, pointerEvents: 'none',
-          }}>&#128269;</span>
+            color: 'var(--text-light)', pointerEvents: 'none',
+          }}>
+            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+          </svg>
           <input
             value={query}
             onChange={e => setQuery(e.target.value)}
